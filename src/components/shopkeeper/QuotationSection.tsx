@@ -230,9 +230,13 @@ export const QuotationSection: React.FC<QuotationSectionProps> = ({
                       {product.unit}
                     </span>
 
-                    <span className="text-4xl sm:text-5xl group-hover:scale-110 transition-transform duration-300 select-none filter drop-shadow-md">
-                      {product.imageEmoji}
-                    </span>
+                    {product.imageUrl ? (
+                      <img src={product.imageUrl} alt={product.name} className="w-full h-full object-contain p-1 rounded-xl" />
+                    ) : (
+                      <span className="text-4xl sm:text-5xl group-hover:scale-110 transition-transform duration-300 select-none filter drop-shadow-md">
+                        {product.imageEmoji || '📦'}
+                      </span>
+                    )}
                   </div>
 
                   {/* Info Details */}
@@ -377,7 +381,11 @@ export const QuotationSection: React.FC<QuotationSectionProps> = ({
                         className="flex items-center justify-between p-3 bg-slate-950 rounded-2xl border border-slate-800/80 text-xs shadow-sm"
                       >
                         <div className="flex items-center space-x-3 overflow-hidden">
-                          <span className="text-2xl">{item.product.imageEmoji}</span>
+                          {item.product.imageUrl ? (
+                            <img src={item.product.imageUrl} alt={item.product.name} className="w-8 h-8 object-contain p-0.5 rounded-lg border border-slate-700 shrink-0" />
+                          ) : (
+                            <span className="text-2xl shrink-0">{item.product.imageEmoji || '📦'}</span>
+                          )}
                           <div className="truncate">
                             <div className="font-bold text-white truncate text-xs sm:text-sm">{item.product.name}</div>
                             <div className="flex items-center space-x-1.5 mt-0.5">

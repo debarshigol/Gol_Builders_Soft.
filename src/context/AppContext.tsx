@@ -153,6 +153,39 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [products, customers, invoices, quotations, theme]);
 
+  // Real-time synchronization across browser tabs/windows
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === LOCAL_STORAGE_PREFIX + 'products' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          if (Array.isArray(parsed)) setProducts(parsed);
+        } catch (err) {}
+      }
+      if (e.key === LOCAL_STORAGE_PREFIX + 'customers' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          if (Array.isArray(parsed)) setCustomers(parsed);
+        } catch (err) {}
+      }
+      if (e.key === LOCAL_STORAGE_PREFIX + 'invoices' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          if (Array.isArray(parsed)) setInvoices(parsed);
+        } catch (err) {}
+      }
+      if (e.key === LOCAL_STORAGE_PREFIX + 'quotations' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          if (Array.isArray(parsed)) setQuotations(parsed);
+        } catch (err) {}
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
+
   const toggleTheme = () => {
     setTheme(prev => (prev === 'dark' ? 'light' : 'dark'));
   };
@@ -589,13 +622,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
   };
 
-  // Owner Product Actions
+  // Owner Product Actions (Adds items directly to central products array & updates persistent storage)
   const addProduct = (productData: Omit<Product, 'id'>) => {
     const newProd: Product = {
       ...productData,
       id: `p-${Date.now()}`,
     };
-    setProducts(prev => [newProd, ...prev]);
+    setProducts(prev => {
+      const updated = [newProd, ...prev];
+      try {
+        localStorage.setItem(LOCAL_STORAGE_PREFIX + 'products', JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
   };
 
   const bulkAddProducts = (productsData: Array<Omit<Product, 'id'>>) => {
@@ -604,23 +643,43 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ...data,
       id: `p-${now}-${idx}`,
     }));
-    setProducts(prev => [...newProds, ...prev]);
+    setProducts(prev => {
+      const updated = [...newProds, ...prev];
+      try {
+        localStorage.setItem(LOCAL_STORAGE_PREFIX + 'products', JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
   };
 
   const updateProductStock = (productId: string, newStock: number) => {
-    setProducts(prev =>
-      prev.map(p => (p.id === productId ? { ...p, stock: Math.max(0, newStock) } : p))
-    );
+    setProducts(prev => {
+      const updated = prev.map(p => (p.id === productId ? { ...p, stock: Math.max(0, newStock) } : p));
+      try {
+        localStorage.setItem(LOCAL_STORAGE_PREFIX + 'products', JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
   };
 
   const updateProductPrice = (productId: string, newPrice: number) => {
-    setProducts(prev =>
-      prev.map(p => (p.id === productId ? { ...p, price: Math.max(0, newPrice) } : p))
-    );
+    setProducts(prev => {
+      const updated = prev.map(p => (p.id === productId ? { ...p, price: Math.max(0, newPrice) } : p));
+      try {
+        localStorage.setItem(LOCAL_STORAGE_PREFIX + 'products', JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
   };
 
   const deleteProduct = (productId: string) => {
-    setProducts(prev => prev.filter(p => p.id !== productId));
+    setProducts(prev => {
+      const updated = prev.filter(p => p.id !== productId);
+      try {
+        localStorage.setItem(LOCAL_STORAGE_PREFIX + 'products', JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
     setCart(prev => prev.filter(item => item.product.id !== productId));
   };
 

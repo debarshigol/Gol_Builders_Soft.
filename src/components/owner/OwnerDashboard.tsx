@@ -673,7 +673,11 @@ export const OwnerDashboard: React.FC<{ onViewInvoice: (inv: Invoice) => void }>
                     <tr key={p.id} className="hover:bg-slate-800/40 transition">
                       <td className="py-3 px-3">
                         <div className="flex items-center space-x-2.5">
-                          <span className="text-xl">{p.imageEmoji}</span>
+                          {p.imageUrl ? (
+                            <img src={p.imageUrl} alt={p.name} className="w-7 h-7 object-contain p-0.5 rounded-lg border border-slate-700 shrink-0" />
+                          ) : (
+                            <span className="text-xl shrink-0">{p.imageEmoji || '📦'}</span>
+                          )}
                           <div>
                             <div className="font-semibold text-white">{p.name}</div>
                             <div className="text-[10px] text-slate-400">Per {p.unit}</div>

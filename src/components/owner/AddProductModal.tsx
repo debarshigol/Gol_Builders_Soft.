@@ -18,7 +18,8 @@ import {
   Copy,
   Check,
   Trash2,
-  AlertTriangle
+  AlertTriangle,
+  Image as ImageIcon
 } from 'lucide-react';
 
 interface AddProductModalProps {
@@ -39,8 +40,10 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({ isOpen, onClos
   const [stock, setStock] = useState<number | ''>('');
   const [sku, setSku] = useState('');
   const [unit, setUnit] = useState('Bag');
-  const [imageEmoji, setImageEmoji] = useState('🏛️');
+  const [imageUrl, setImageUrl] = useState<string>('');
   const [error, setError] = useState('');
+
+  const singleFileInputRef = useRef<HTMLInputElement>(null);
 
   // Bulk Upload State
   const [bulkFile, setBulkFile] = useState<File | null>(null);
@@ -52,7 +55,21 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({ isOpen, onClos
   if (!isOpen) return null;
 
   const existingCategories = Array.from(new Set(products.map(p => p.category)));
-  const emojiOptions = ['🏛️', '🧱', '🏗️', '⚙️', '⏳', '🏖️', '🪨', '⏹️', '🪣', '⛓️', '🚰', '📐', '🛠️', '🪵', '📦'];
+
+  // Single Image Upload Reader
+  const handleSingleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const dataUrl = event.target?.result as string;
+      if (dataUrl) {
+        setImageUrl(dataUrl);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
 
   // Single Product Submit
   const handleSingleSubmit = (e: React.FormEvent) => {
@@ -80,7 +97,8 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({ isOpen, onClos
       stock: Number(stock),
       sku: generatedSku,
       unit,
-      imageEmoji,
+      imageEmoji: '📦',
+      imageUrl: imageUrl || undefined,
     });
 
     resetSingleForm();
@@ -93,6 +111,7 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({ isOpen, onClos
     setCostPrice('');
     setStock('');
     setSku('');
+    setImageUrl('');
     setError('');
   };
 
@@ -216,6 +235,7 @@ Chrome Plated Bib Cock Tap,Kitchen & Bath,450,320,40,Piece,SKU-TAP-CPBIB,🚿`;
         unit: p.unit,
         sku: p.sku,
         imageEmoji: p.imageEmoji,
+        imageUrl: p.imageUrl,
       }));
     validateAndSetParsedProducts(updatedRaw);
   };
@@ -233,6 +253,7 @@ Chrome Plated Bib Cock Tap,Kitchen & Bath,450,320,40,Piece,SKU-TAP-CPBIB,🚿`;
         unit: p.unit,
         sku: p.sku,
         imageEmoji: p.imageEmoji,
+        imageUrl: p.imageUrl,
       }));
     validateAndSetParsedProducts(nonDuplicateRaw);
   };
@@ -336,6 +357,7 @@ Chrome Plated Bib Cock Tap,Kitchen & Bath,450,320,40,Piece,SKU-TAP-CPBIB,🚿`;
       unit: p.unit,
       sku: p.sku,
       imageEmoji: p.imageEmoji,
+      imageUrl: p.imageUrl,
     }));
 
     bulkAddProducts(itemsToImport);
@@ -413,36 +435,78 @@ Chrome Plated Bib Cock Tap,Kitchen & Bath,450,320,40,Piece,SKU-TAP-CPBIB,🚿`;
               </div>
             )}
 
-            {/* Emoji & Product Name */}
-            <div className="grid grid-cols-12 gap-3">
-              <div className="col-span-3">
-                <label className="block text-xs font-bold text-slate-300 mb-1">Icon</label>
-                <select
-                  value={imageEmoji}
-                  onChange={e => setImageEmoji(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-center text-xl focus:outline-none focus:border-indigo-500"
-                >
-                  {emojiOptions.map(emoji => (
-                    <option key={emoji} value={emoji}>
-                      {emoji}
-                    </option>
-                  ))}
-                </select>
-              </div>
+            {/* Product Image Upload Box */}
+            <div>
+              <label className="block text-xs font-bold text-slate-300 mb-1">
+                Upload Product Image <span className="text-slate-500 font-normal">(PNG, JPG, WebP)</span>
+              </label>
 
-              <div className="col-span-9">
-                <label className="block text-xs font-bold text-slate-300 mb-1">
-                  Product Name <span className="text-amber-400">*</span>
-                </label>
+              <div
+                onClick={() => singleFileInputRef.current?.click()}
+                className="relative border-2 border-dashed border-slate-800 hover:border-indigo-500/60 bg-slate-950/80 rounded-2xl p-4 text-center cursor-pointer transition flex items-center justify-center space-x-4 group"
+              >
                 <input
-                  type="text"
-                  value={name}
-                  onChange={e => setName(e.target.value)}
-                  placeholder="e.g. UltraTech Weather Plus Cement 50kg"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-indigo-500"
-                  required
+                  ref={singleFileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleSingleImageChange}
+                  className="hidden"
                 />
+
+                {imageUrl ? (
+                  <div className="flex items-center space-x-4 w-full justify-between px-2">
+                    <div className="flex items-center space-x-3">
+                      <div className="w-16 h-16 rounded-xl bg-slate-900 border border-slate-700 overflow-hidden flex items-center justify-center shrink-0">
+                        <img src={imageUrl} alt="Preview" className="w-full h-full object-contain p-1" />
+                      </div>
+                      <div className="text-left">
+                        <span className="text-xs font-bold text-emerald-400 block flex items-center gap-1">
+                          <CheckCircle2 className="w-3.5 h-3.5" /> Product Image Loaded
+                        </span>
+                        <span className="text-[10px] text-slate-400">Click box to change picture</span>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setImageUrl('');
+                        if (singleFileInputRef.current) singleFileInputRef.current.value = '';
+                      }}
+                      className="p-2 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition"
+                      title="Remove image"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center space-x-3 py-1">
+                    <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 flex items-center justify-center group-hover:scale-110 transition">
+                      <Upload className="w-5 h-5" />
+                    </div>
+                    <div className="text-left">
+                      <span className="text-xs font-bold text-slate-200 block">Click to upload product image</span>
+                      <span className="text-[10px] text-slate-500">Select photo from device storage or camera roll</span>
+                    </div>
+                  </div>
+                )}
               </div>
+            </div>
+
+            {/* Product Name */}
+            <div>
+              <label className="block text-xs font-bold text-slate-300 mb-1">
+                Product Name <span className="text-amber-400">*</span>
+              </label>
+              <input
+                type="text"
+                value={name}
+                onChange={e => setName(e.target.value)}
+                placeholder="e.g. UltraTech Weather Plus Cement 50kg"
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-indigo-500"
+                required
+              />
             </div>
 
             {/* Category & Unit */}

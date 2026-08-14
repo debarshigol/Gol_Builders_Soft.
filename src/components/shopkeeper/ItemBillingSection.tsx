@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '@/context/AppContext';
-import { PaymentMethod, Customer } from '@/types';
+import { PaymentMethod, Customer, Product } from '@/types';
 import {
   ShoppingBag,
   Search,
@@ -107,16 +107,25 @@ export const ItemBillingSection: React.FC<ItemBillingSectionProps> = ({
   };
 
   // Categories list
-  const categories = ['All', ...Array.from(new Set(products.map(p => p.category)))];
+  const categories = useMemo(() => {
+    const set = new Set(products.map(p => p.category).filter(Boolean));
+    return ['All', ...Array.from(set)];
+  }, [products]);
 
-  // Filter products
-  const filteredProducts = products.filter(product => {
-    const matchesCategory = selectedCategory === 'All' || product.category === selectedCategory;
-    const matchesSearch =
-      product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      product.sku.toLowerCase().includes(searchTerm.toLowerCase());
-    return matchesCategory && matchesSearch;
-  });
+  // Filter products safely
+  const filteredProducts = useMemo(() => {
+    const searchLower = (searchTerm || '').toLowerCase().trim();
+    return products.filter(product => {
+      if (!product) return false;
+      const matchesCategory = selectedCategory === 'All' || product.category === selectedCategory;
+      const matchesSearch =
+        !searchLower ||
+        (product.name && product.name.toLowerCase().includes(searchLower)) ||
+        (product.sku && product.sku.toLowerCase().includes(searchLower)) ||
+        (product.category && product.category.toLowerCase().includes(searchLower));
+      return matchesCategory && matchesSearch;
+    });
+  }, [products, selectedCategory, searchTerm]);
 
   // Totals calculation
   const totalCartItemsCount = cart.reduce((sum, item) => sum + item.quantity, 0);
@@ -178,7 +187,7 @@ export const ItemBillingSection: React.FC<ItemBillingSectionProps> = ({
 
         {/* Horizontally Scrollable Category Pills Row */}
         <div className="flex items-center space-x-2 overflow-x-auto pb-2 mb-4 scrollbar-none">
-          {categories.map(cat => (
+          {categories.map((cat: string) => (
             <button
               key={cat}
               onClick={() => setSelectedCategory(cat)}
@@ -199,7 +208,7 @@ export const ItemBillingSection: React.FC<ItemBillingSectionProps> = ({
               No products matching "{searchTerm}"
             </div>
           ) : (
-            filteredProducts.map(product => {
+            filteredProducts.map((product: Product) => {
               const cartItem = cart.find(i => i.product.id === product.id);
               const isOutOfStock = product.stock <= 0;
               const isLowStock = product.stock > 0 && product.stock <= 10;
@@ -228,10 +237,14 @@ export const ItemBillingSection: React.FC<ItemBillingSectionProps> = ({
                       {isOutOfStock ? 'Out of Stock' : product.stock > 1000 ? '1000+ left' : `${product.stock} left`}
                     </span>
 
-                    {/* Centered Product Emoji Display */}
-                    <span className="text-4xl sm:text-5xl group-hover:scale-110 transition-transform duration-300 select-none filter drop-shadow-md">
-                      {product.imageEmoji}
-                    </span>
+                    {/* Centered Product Image / Emoji Display */}
+                    {product.imageUrl ? (
+                      <img src={product.imageUrl} alt={product.name} className="w-full h-full object-contain p-1 rounded-xl" />
+                    ) : (
+                      <span className="text-4xl sm:text-5xl group-hover:scale-110 transition-transform duration-300 select-none filter drop-shadow-md">
+                        {product.imageEmoji || '📦'}
+                      </span>
+                    )}
                   </div>
 
                   {/* Middle 30%: Product Info Details */}
@@ -368,7 +381,11 @@ export const ItemBillingSection: React.FC<ItemBillingSectionProps> = ({
                       className="flex items-center justify-between p-3 bg-slate-950 rounded-2xl border border-slate-800/80 text-xs shadow-sm"
                     >
                       <div className="flex items-center space-x-3 overflow-hidden">
-                        <span className="text-2xl">{item.product.imageEmoji}</span>
+                        {item.product.imageUrl ? (
+                          <img src={item.product.imageUrl} alt={item.product.name} className="w-8 h-8 object-contain p-0.5 rounded-lg border border-slate-700 shrink-0" />
+                        ) : (
+                          <span className="text-2xl shrink-0">{item.product.imageEmoji || '📦'}</span>
+                        )}
                         <div className="truncate">
                           <div className="font-bold text-white truncate text-xs sm:text-sm">{item.product.name}</div>
                           <div className="text-slate-400 font-mono text-[11px]">₹{item.product.price} / {item.product.unit}</div>

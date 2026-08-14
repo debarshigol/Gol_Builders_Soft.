@@ -8,6 +8,7 @@ export interface Product {
   sku: string;
   unit: string;
   imageEmoji: string;
+  imageUrl?: string;
 }
 
 export interface Customer {
