@@ -106,23 +106,29 @@ export const ItemBillingSection: React.FC<ItemBillingSectionProps> = ({
     }
   };
 
-  // Categories list
+  // Categories list (Includes Main Categories and Sub-Categories)
   const categories = useMemo(() => {
-    const set = new Set(products.map(p => p.category).filter(Boolean));
+    const mainCats = products.map(p => p.category).filter(Boolean);
+    const subCats = products.map(p => p.subCategory).filter((s): s is string => Boolean(s));
+    const set = new Set([...mainCats, ...subCats]);
     return ['All', ...Array.from(set)];
   }, [products]);
 
-  // Filter products safely
+  // Filter products safely by Main Category, Sub-Category, or Search
   const filteredProducts = useMemo(() => {
     const searchLower = (searchTerm || '').toLowerCase().trim();
     return products.filter(product => {
       if (!product) return false;
-      const matchesCategory = selectedCategory === 'All' || product.category === selectedCategory;
+      const matchesCategory =
+        selectedCategory === 'All' ||
+        product.category === selectedCategory ||
+        product.subCategory === selectedCategory;
       const matchesSearch =
         !searchLower ||
         (product.name && product.name.toLowerCase().includes(searchLower)) ||
         (product.sku && product.sku.toLowerCase().includes(searchLower)) ||
-        (product.category && product.category.toLowerCase().includes(searchLower));
+        (product.category && product.category.toLowerCase().includes(searchLower)) ||
+        (product.subCategory && product.subCategory.toLowerCase().includes(searchLower));
       return matchesCategory && matchesSearch;
     });
   }, [products, selectedCategory, searchTerm]);

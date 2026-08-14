@@ -1,139 +1,7 @@
 import { Product, Customer, Invoice, Quotation } from '@/types';
 
-export const initialProducts: Product[] = [
-  {
-    id: 'p-1',
-    name: 'PPC Grade Cement 50kg Bag',
-    category: 'Cement & Binders',
-    price: 380,
-    costPrice: 310,
-    stock: 250,
-    sku: 'CEM-PPC-50',
-    unit: 'Bag',
-    imageEmoji: '🏛️',
-  },
-  {
-    id: 'p-2',
-    name: 'OPC 53 Grade Cement 50kg',
-    category: 'Cement & Binders',
-    price: 410,
-    costPrice: 340,
-    stock: 180,
-    sku: 'CEM-OPC53-50',
-    unit: 'Bag',
-    imageEmoji: '🧱',
-  },
-  {
-    id: 'p-3',
-    name: 'TMT Steel Rebar 10mm (Fe 550D)',
-    category: 'Iron Rod & Steel',
-    price: 58000,
-    costPrice: 51000,
-    stock: 12,
-    sku: 'STL-TMT10-TON',
-    unit: 'Ton',
-    imageEmoji: '🏗️',
-  },
-  {
-    id: 'p-4',
-    name: 'TMT Steel Rebar 12mm (Fe 550D)',
-    category: 'Iron Rod & Steel',
-    price: 57500,
-    costPrice: 50500,
-    stock: 5,
-    sku: 'STL-TMT12-TON',
-    unit: 'Ton',
-    imageEmoji: '⚙️',
-  },
-  {
-    id: 'p-5',
-    name: 'M-Sand (Manufactured Sand)',
-    category: 'Sand & Aggregates',
-    price: 4500,
-    costPrice: 3600,
-    stock: 35,
-    sku: 'SND-MSAND-BRS',
-    unit: 'Brass',
-    imageEmoji: '⏳',
-  },
-  {
-    id: 'p-6',
-    name: 'River Sand (Fine Grade)',
-    category: 'Sand & Aggregates',
-    price: 6200,
-    costPrice: 5200,
-    stock: 4,
-    sku: 'SND-RIVER-BRS',
-    unit: 'Brass',
-    imageEmoji: '🏖️',
-  },
-  {
-    id: 'p-7',
-    name: '20mm Blue Metal Stone Aggregate',
-    category: 'Sand & Aggregates',
-    price: 3800,
-    costPrice: 3000,
-    stock: 30,
-    sku: 'STN-20MM-BRS',
-    unit: 'Brass',
-    imageEmoji: '🪨',
-  },
-  {
-    id: 'p-8',
-    name: 'Red Clay Bricks (First Class)',
-    category: 'Bricks & Blocks',
-    price: 8.5,
-    costPrice: 6.8,
-    stock: 10000,
-    sku: 'BRK-RED-PCS',
-    unit: 'Pcs',
-    imageEmoji: '🧱',
-  },
-  {
-    id: 'p-9',
-    name: 'AAC Concrete Blocks (600x200x150mm)',
-    category: 'Bricks & Blocks',
-    price: 65,
-    costPrice: 48,
-    stock: 800,
-    sku: 'BRK-AAC-600',
-    unit: 'Pcs',
-    imageEmoji: '⏹️',
-  },
-  {
-    id: 'p-10',
-    name: 'Dr. Fixit Waterproofing Chemical 20L',
-    category: 'Chemicals & Hardware',
-    price: 3400,
-    costPrice: 2600,
-    stock: 20,
-    sku: 'CHM-WPRF-20L',
-    unit: 'Bucket',
-    imageEmoji: '🪣',
-  },
-  {
-    id: 'p-11',
-    name: 'GI Binding Wire 18 Gauge',
-    category: 'Iron Rod & Steel',
-    price: 85,
-    costPrice: 62,
-    stock: 150,
-    sku: 'STL-BWIRE-KG',
-    unit: 'kg',
-    imageEmoji: '⛓️',
-  },
-  {
-    id: 'p-12',
-    name: 'PVC Heavy Duty Pipe 4-inch (6 Meter)',
-    category: 'Plumbing & Hardware',
-    price: 520,
-    costPrice: 390,
-    stock: 60,
-    sku: 'PLM-PVC4-6M',
-    unit: 'Length',
-    imageEmoji: '🚰',
-  },
-];
+// Empty initial products array - user will add real products from the Owner Dashboard
+export const initialProducts: Product[] = [];
 
 export const initialCustomers: Customer[] = [
   {
@@ -179,23 +47,33 @@ export const initialCustomers: Customer[] = [
 ];
 
 export const initialInvoices: Invoice[] = [
-  // --- RAJESH KUMAR (9876543210) INVOICES ---
   {
     id: 'INV-2026-1001',
     customerPhone: '9876543210',
     customerName: 'Rajesh Kumar (Buildcon Infrastructure)',
     customerAddress: 'Site 42, Industrial Construction Park, Sector 4',
     items: [
-      { product: initialProducts[0], quantity: 80 }, // 80 bags PPC Cement
-      { product: initialProducts[5], quantity: 3 },  // 3 Brass River Sand
-      { product: initialProducts[6], quantity: 2 },  // 2 Brass 20mm Stone
+      {
+        product: {
+          id: 'p-1',
+          name: 'PPC Grade Cement 50kg Bag',
+          category: 'Cement & Binders',
+          price: 380,
+          costPrice: 310,
+          stock: 250,
+          sku: 'CEM-PPC-50',
+          unit: 'Bag',
+          imageEmoji: '🏛️',
+        },
+        quantity: 100,
+      },
     ],
-    subtotal: 56600,
+    subtotal: 38000,
     taxRate: 18,
-    taxAmount: 10188,
-    discount: 1788,
-    totalAmount: 65000,
-    amountPaid: 65000,
+    taxAmount: 6840,
+    discount: 840,
+    totalAmount: 44000,
+    amountPaid: 44000,
     dueAmount: 0,
     paymentMethod: 'UPI',
     paymentStatus: 'Paid',
@@ -208,9 +86,34 @@ export const initialInvoices: Invoice[] = [
     customerName: 'Rajesh Kumar (Buildcon Infrastructure)',
     customerAddress: 'Site 42, Industrial Construction Park, Sector 4',
     items: [
-      { product: initialProducts[2], quantity: 1 },  // 1 Ton 10mm Steel
-      { product: initialProducts[0], quantity: 50 }, // 50 bags PPC Cement
-      { product: initialProducts[4], quantity: 2 },  // 2 Brass M-Sand
+      {
+        product: {
+          id: 'p-3',
+          name: 'TMT Steel Rebar 10mm (Fe 550D)',
+          category: 'Iron Rod & Steel',
+          price: 58000,
+          costPrice: 51000,
+          stock: 12,
+          sku: 'STL-TMT10-TON',
+          unit: 'Ton',
+          imageEmoji: '🏗️',
+        },
+        quantity: 1,
+      },
+      {
+        product: {
+          id: 'p-1',
+          name: 'PPC Grade Cement 50kg Bag',
+          category: 'Cement & Binders',
+          price: 380,
+          costPrice: 310,
+          stock: 250,
+          sku: 'CEM-PPC-50',
+          unit: 'Bag',
+          imageEmoji: '🏛️',
+        },
+        quantity: 50,
+      },
     ],
     subtotal: 86000,
     taxRate: 18,
@@ -222,49 +125,6 @@ export const initialInvoices: Invoice[] = [
     paymentMethod: 'UPI',
     paymentStatus: 'Partial',
     createdAt: '2026-08-11T14:15:00Z',
-    status: 'Completed',
-  },
-  {
-    id: 'INV-2026-1005',
-    customerPhone: '9876543210',
-    customerName: 'Rajesh Kumar (Buildcon Infrastructure)',
-    customerAddress: 'Site 42, Industrial Construction Park, Sector 4',
-    items: [
-      { product: initialProducts[7], quantity: 4000 }, // 4000 Red Clay Bricks
-      { product: initialProducts[1], quantity: 30 },   // 30 bags OPC Cement
-    ],
-    subtotal: 46300,
-    taxRate: 18,
-    taxAmount: 8334,
-    discount: 1134,
-    totalAmount: 53500,
-    amountPaid: 53500,
-    dueAmount: 0,
-    paymentMethod: 'Card',
-    paymentStatus: 'Paid',
-    createdAt: '2026-08-04T10:00:00Z',
-    status: 'Completed',
-  },
-  {
-    id: 'INV-2026-1009',
-    customerPhone: '9876543210',
-    customerName: 'Rajesh Kumar (Buildcon Infrastructure)',
-    customerAddress: 'Site 42, Industrial Construction Park, Sector 4',
-    items: [
-      { product: initialProducts[9], quantity: 2 },  // 2 Buckets Dr Fixit
-      { product: initialProducts[10], quantity: 20 }, // 20 kg Binding Wire
-      { product: initialProducts[11], quantity: 10 }, // 10 Lengths PVC Pipe
-    ],
-    subtotal: 13700,
-    taxRate: 18,
-    taxAmount: 2466,
-    discount: 766,
-    totalAmount: 15400,
-    amountPaid: 15400,
-    dueAmount: 0,
-    paymentMethod: 'Cash',
-    paymentStatus: 'Paid',
-    createdAt: '2026-07-25T16:45:00Z',
     status: 'Completed',
   },
   {
@@ -302,299 +162,6 @@ export const initialInvoices: Invoice[] = [
     createdAt: '2026-07-10T12:00:00Z',
     status: 'Completed',
   },
-  {
-    id: 'GST-2026-1020',
-    customerPhone: '9876543210',
-    customerName: 'Rajesh Kumar (Buildcon Infrastructure)',
-    customerAddress: 'Site 42, Industrial Construction Park, Sector 4',
-    customerGstin: '19ABCDE1234F1ZH',
-    items: [
-      { product: initialProducts[8], quantity: 400 }, // 400 AAC Blocks
-      { product: initialProducts[0], quantity: 60 },  // 60 PPC Cement
-    ],
-    subtotal: 48800,
-    taxRate: 18,
-    taxAmount: 8784,
-    cgstAmount: 4392,
-    sgstAmount: 4392,
-    discount: 2084,
-    totalAmount: 55500,
-    amountPaid: 55500,
-    dueAmount: 0,
-    paymentMethod: 'UPI',
-    paymentStatus: 'Paid',
-    isGstInvoice: true,
-    createdAt: '2026-06-28T11:20:00Z',
-    status: 'Completed',
-  },
-
-  // --- PRIYA SHARMA (9812345678) INVOICES ---
-  {
-    id: 'INV-2026-1003',
-    customerPhone: '9812345678',
-    customerName: 'Priya Sharma (Apex Housing Project)',
-    customerAddress: 'Sunshine Enclave Tower B, MG Road',
-    items: [
-      { product: initialProducts[3], quantity: 2 },  // 2 Tons 12mm Steel
-      { product: initialProducts[1], quantity: 60 }, // 60 bags OPC Cement
-      { product: initialProducts[5], quantity: 2 },  // 2 Brass River Sand
-    ],
-    subtotal: 152000,
-    taxRate: 18,
-    taxAmount: 27360,
-    discount: 4360,
-    totalAmount: 175000,
-    amountPaid: 160000,
-    dueAmount: 15000,
-    paymentMethod: 'Card',
-    paymentStatus: 'Partial',
-    createdAt: '2026-08-12T11:30:00Z',
-    status: 'Completed',
-  },
-  {
-    id: 'INV-2026-1006',
-    customerPhone: '9812345678',
-    customerName: 'Priya Sharma (Apex Housing Project)',
-    customerAddress: 'Sunshine Enclave Tower B, MG Road',
-    items: [
-      { product: initialProducts[0], quantity: 100 }, // 100 bags PPC Cement
-      { product: initialProducts[4], quantity: 4 },   // 4 Brass M-Sand
-    ],
-    subtotal: 56000,
-    taxRate: 18,
-    taxAmount: 10080,
-    discount: 1080,
-    totalAmount: 65000,
-    amountPaid: 65000,
-    dueAmount: 0,
-    paymentMethod: 'UPI',
-    paymentStatus: 'Paid',
-    createdAt: '2026-08-06T15:10:00Z',
-    status: 'Completed',
-  },
-  {
-    id: 'INV-2026-1010',
-    customerPhone: '9812345678',
-    customerName: 'Priya Sharma (Apex Housing Project)',
-    customerAddress: 'Sunshine Enclave Tower B, MG Road',
-    items: [
-      { product: initialProducts[7], quantity: 6000 }, // 6000 Red Clay Bricks
-      { product: initialProducts[6], quantity: 3 },    // 3 Brass 20mm Stone
-    ],
-    subtotal: 62400,
-    taxRate: 18,
-    taxAmount: 11232,
-    discount: 1232,
-    totalAmount: 72400,
-    amountPaid: 72400,
-    dueAmount: 0,
-    paymentMethod: 'Cash',
-    paymentStatus: 'Paid',
-    createdAt: '2026-07-29T09:45:00Z',
-    status: 'Completed',
-  },
-  {
-    id: 'GST-2026-1016',
-    customerPhone: '9812345678',
-    customerName: 'Priya Sharma (Apex Housing Project)',
-    customerAddress: 'Sunshine Enclave Tower B, MG Road',
-    customerGstin: '19AAACA1234B1Z9',
-    items: [
-      { product: initialProducts[2], quantity: 2 }, // 2 Tons 10mm Steel
-    ],
-    subtotal: 116000,
-    taxRate: 18,
-    taxAmount: 20880,
-    cgstAmount: 10440,
-    sgstAmount: 10440,
-    discount: 1880,
-    totalAmount: 135000,
-    amountPaid: 135000,
-    dueAmount: 0,
-    paymentMethod: 'UPI',
-    paymentStatus: 'Paid',
-    isGstInvoice: true,
-    createdAt: '2026-07-15T14:20:00Z',
-    status: 'Completed',
-  },
-
-  // --- AMIT PATEL (9955443322) INVOICES ---
-  {
-    id: 'INV-2026-1004',
-    customerPhone: '9955443322',
-    customerName: 'Amit Patel (Shree Ram Construction)',
-    customerAddress: 'Plot 3B, Civil Lines, Station Road',
-    items: [
-      { product: initialProducts[0], quantity: 30 }, // 30 bags Cement
-      { product: initialProducts[4], quantity: 2 },  // 2 Brass M-Sand
-      { product: initialProducts[10], quantity: 15 }, // 15 kg Binding Wire
-    ],
-    subtotal: 21675,
-    taxRate: 18,
-    taxAmount: 3901.5,
-    discount: 576.5,
-    totalAmount: 25000,
-    amountPaid: 25000,
-    dueAmount: 0,
-    paymentMethod: 'Cash',
-    paymentStatus: 'Paid',
-    createdAt: '2026-08-13T10:00:00Z',
-    status: 'Completed',
-  },
-  {
-    id: 'INV-2026-1007',
-    customerPhone: '9955443322',
-    customerName: 'Amit Patel (Shree Ram Construction)',
-    customerAddress: 'Plot 3B, Civil Lines, Station Road',
-    items: [
-      { product: initialProducts[7], quantity: 3500 }, // 3500 Red Bricks
-      { product: initialProducts[1], quantity: 25 },   // 25 bags OPC Cement
-    ],
-    subtotal: 40000,
-    taxRate: 18,
-    taxAmount: 7200,
-    discount: 1200,
-    totalAmount: 46000,
-    amountPaid: 46000,
-    dueAmount: 0,
-    paymentMethod: 'Cash',
-    paymentStatus: 'Paid',
-    createdAt: '2026-08-09T16:30:00Z',
-    status: 'Completed',
-  },
-  {
-    id: 'INV-2026-1011',
-    customerPhone: '9955443322',
-    customerName: 'Amit Patel (Shree Ram Construction)',
-    customerAddress: 'Plot 3B, Civil Lines, Station Road',
-    items: [
-      { product: initialProducts[9], quantity: 4 },  // 4 Buckets Dr Fixit
-      { product: initialProducts[11], quantity: 15 }, // 15 Lengths PVC Pipe
-    ],
-    subtotal: 21400,
-    taxRate: 18,
-    taxAmount: 3852,
-    discount: 752,
-    totalAmount: 24500,
-    amountPaid: 24500,
-    dueAmount: 0,
-    paymentMethod: 'UPI',
-    paymentStatus: 'Paid',
-    createdAt: '2026-07-27T13:00:00Z',
-    status: 'Completed',
-  },
-  {
-    id: 'INV-2026-1017',
-    customerPhone: '9955443322',
-    customerName: 'Amit Patel (Shree Ram Construction)',
-    customerAddress: 'Plot 3B, Civil Lines, Station Road',
-    items: [
-      { product: initialProducts[6], quantity: 3 }, // 3 Brass 20mm Stone
-      { product: initialProducts[5], quantity: 1 }, // 1 Brass River Sand
-    ],
-    subtotal: 17600,
-    taxRate: 18,
-    taxAmount: 3168,
-    discount: 1193,
-    totalAmount: 19575,
-    amountPaid: 19575,
-    dueAmount: 0,
-    paymentMethod: 'Card',
-    paymentStatus: 'Paid',
-    createdAt: '2026-07-12T10:15:00Z',
-    status: 'Completed',
-  },
-
-  // --- SNEHA GUPTA (9112233445) INVOICES ---
-  {
-    id: 'INV-2026-1008',
-    customerPhone: '9112233445',
-    customerName: 'Sneha Gupta (Urban Developers)',
-    customerAddress: '15 Builders Tower, Indiranagar',
-    items: [
-      { product: initialProducts[3], quantity: 3 },   // 3 Tons 12mm Steel
-      { product: initialProducts[0], quantity: 120 }, // 120 bags PPC Cement
-      { product: initialProducts[4], quantity: 5 },   // 5 Brass M-Sand
-    ],
-    subtotal: 240600,
-    taxRate: 18,
-    taxAmount: 43308,
-    discount: 3908,
-    totalAmount: 280000,
-    amountPaid: 255000,
-    dueAmount: 25000,
-    paymentMethod: 'UPI',
-    paymentStatus: 'Partial',
-    createdAt: '2026-08-13T08:45:00Z',
-    status: 'Completed',
-  },
-  {
-    id: 'INV-2026-1012',
-    customerPhone: '9112233445',
-    customerName: 'Sneha Gupta (Urban Developers)',
-    customerAddress: '15 Builders Tower, Indiranagar',
-    items: [
-      { product: initialProducts[7], quantity: 10000 }, // 10,000 Red Bricks
-      { product: initialProducts[1], quantity: 80 },    // 80 bags OPC Cement
-    ],
-    subtotal: 117800,
-    taxRate: 18,
-    taxAmount: 21204,
-    discount: 2004,
-    totalAmount: 137000,
-    amountPaid: 137000,
-    dueAmount: 0,
-    paymentMethod: 'Card',
-    paymentStatus: 'Paid',
-    createdAt: '2026-08-02T16:00:00Z',
-    status: 'Completed',
-  },
-  {
-    id: 'INV-2026-1015',
-    customerPhone: '9112233445',
-    customerName: 'Sneha Gupta (Urban Developers)',
-    customerAddress: '15 Builders Tower, Indiranagar',
-    items: [
-      { product: initialProducts[8], quantity: 500 }, // 500 AAC Blocks
-      { product: initialProducts[0], quantity: 40 },  // 40 bags PPC Cement
-    ],
-    subtotal: 47700,
-    taxRate: 18,
-    taxAmount: 8586,
-    discount: 886,
-    totalAmount: 55400,
-    amountPaid: 55400,
-    dueAmount: 0,
-    paymentMethod: 'UPI',
-    paymentStatus: 'Paid',
-    createdAt: '2026-07-22T14:10:00Z',
-    status: 'Completed',
-  },
-  {
-    id: 'GST-2026-1019',
-    customerPhone: '9112233445',
-    customerName: 'Sneha Gupta (Urban Developers)',
-    customerAddress: '15 Builders Tower, Indiranagar',
-    customerGstin: '19AAACG5678H1Z4',
-    items: [
-      { product: initialProducts[2], quantity: 3 }, // 3 Tons 10mm Steel
-      { product: initialProducts[9], quantity: 5 }, // 5 Buckets Dr Fixit
-    ],
-    subtotal: 191000,
-    taxRate: 18,
-    taxAmount: 34380,
-    cgstAmount: 17190,
-    sgstAmount: 17190,
-    discount: 4880,
-    totalAmount: 220500,
-    amountPaid: 220500,
-    dueAmount: 0,
-    paymentMethod: 'Card',
-    paymentStatus: 'Paid',
-    isGstInvoice: true,
-    createdAt: '2026-07-05T10:30:00Z',
-    status: 'Completed',
-  },
 ];
 
 export const initialQuotations: Quotation[] = [
@@ -605,9 +172,36 @@ export const initialQuotations: Quotation[] = [
     customerAddress: 'Site 42, Industrial Construction Park, Sector 4',
     notes: 'Inquired for upcoming Phase 3 foundation work. Wants bulk pricing for PPC Cement & TMT Steel.',
     items: [
-      { product: initialProducts[0], quantity: 200, quotedPrice: 375 }, // 200 bags PPC Cement
-      { product: initialProducts[2], quantity: 3, quotedPrice: 57500 },   // 3 Tons 10mm Steel
-      { product: initialProducts[4], quantity: 5, quotedPrice: 4400 },    // 5 Brass M-Sand
+      {
+        product: {
+          id: 'p-1',
+          name: 'PPC Grade Cement 50kg Bag',
+          category: 'Cement & Binders',
+          price: 380,
+          costPrice: 310,
+          stock: 250,
+          sku: 'CEM-PPC-50',
+          unit: 'Bag',
+          imageEmoji: '🏛️',
+        },
+        quantity: 200,
+        quotedPrice: 375,
+      },
+      {
+        product: {
+          id: 'p-3',
+          name: 'TMT Steel Rebar 10mm (Fe 550D)',
+          category: 'Iron Rod & Steel',
+          price: 58000,
+          costPrice: 51000,
+          stock: 12,
+          sku: 'STL-TMT10-TON',
+          unit: 'Ton',
+          imageEmoji: '🏗️',
+        },
+        quantity: 3,
+        quotedPrice: 57500,
+      },
     ],
     subtotal: 269500,
     taxRate: 18,
@@ -618,48 +212,4 @@ export const initialQuotations: Quotation[] = [
     validUntil: '2026-08-27T23:59:59Z',
     status: 'Pending Follow-up',
   },
-  {
-    id: 'QTN-2026-7002',
-    customerName: 'Vikram Das (Saraswati Builders)',
-    customerPhone: '9830112233',
-    customerAddress: 'Plot 18, Kakdwip Main Road, South 24 Pgs',
-    notes: 'Quoted for 5-storey residential complex project. Follow up on discount approval.',
-    items: [
-      { product: initialProducts[1], quantity: 150, quotedPrice: 400 }, // 150 bags OPC Cement
-      { product: initialProducts[3], quantity: 4, quotedPrice: 57000 },   // 4 Tons 12mm Steel
-      { product: initialProducts[7], quantity: 15000, quotedPrice: 8.2 }, // 15000 Red Bricks
-    ],
-    subtotal: 411000,
-    taxRate: 18,
-    taxAmount: 73980,
-    discount: 9980,
-    totalAmount: 475000,
-    createdAt: '2026-08-12T14:30:00Z',
-    validUntil: '2026-08-26T23:59:59Z',
-    status: 'Pending Follow-up',
-  },
-  {
-    id: 'QTN-2026-7003',
-    customerName: 'Priya Sharma (Apex Housing Project)',
-    customerPhone: '9812345678',
-    customerAddress: 'Sunshine Enclave Tower B, MG Road',
-    notes: 'Requirement for interior plaster & waterproofing.',
-    items: [
-      { product: initialProducts[9], quantity: 10, quotedPrice: 3300 }, // 10 Buckets Dr Fixit
-      { product: initialProducts[5], quantity: 4, quotedPrice: 6000 },    // 4 Brass River Sand
-    ],
-    subtotal: 57000,
-    taxRate: 18,
-    taxAmount: 10260,
-    discount: 1260,
-    totalAmount: 66000,
-    createdAt: '2026-08-10T16:00:00Z',
-    validUntil: '2026-08-24T23:59:59Z',
-    status: 'Followed Up',
-    ownerCallLog: {
-      lastCalledAt: '2026-08-11T11:15:00Z',
-      ownerNotes: 'Owner called Priya. Client approved river sand rate, pending site engineer final check.',
-    },
-  },
 ];
-

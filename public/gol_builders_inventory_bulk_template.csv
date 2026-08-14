@@ -1,12 +1,9 @@
-Product Name,Category,Selling Price (INR),Cost Price (INR),Initial Stock,Unit,SKU / Barcode,Emoji Icon
-110mm PVC Drainage Pipe 6m,Pipes & Fittings,480,360,50,Length,SKU-PVC-110,🛠️
-Brass Ball Valve 1/2 inch,Pipes & Fittings,220,160,120,Piece,SKU-VAL-050,🚰
-CPVC Solvent Cement 250ml,Adhesives & Sealants,180,130,75,Can,SKU-ADH-CPVC250,🧪
-SS Drain Strainer 4 inch,Kitchen & Bath,150,90,100,Piece,SKU-SNK-STR04,🪠
-Teflon Thread Seal Tape 12mm,Hardware & Accessories,25,12,500,Roll,SKU-TAP-TEF12,🧵
-Water Storage Tank 1000L,Water Storage,7500,5800,15,Unit,SKU-TNK-1000L,🪣
-Submersible Cable 4.0 sq mm,Electrical & Wiring,120,95,300,Meter,SKU-CBL-SUB40,⚡
-GI Binding Wire 12 Gauge,Hardware & Accessories,110,85,200,Kg,SKU-WIR-GI12,🪛
-Submersible Water Pump 1.5 HP,Pumps & Motors,8500,6800,10,Unit,SKU-PMP-15HP,⚙️
-HDPE Pipe 63mm PN6 (Coil),Pipes & Fittings,6200,4900,8,Coil,SKU-HDPE-63PN6,🌀
-Chrome Plated Bib Cock Tap,Kitchen & Bath,450,320,40,Piece,SKU-TAP-CPBIB,🚿
+Product Name,Main Category,Sub Category,Selling Price (INR),Cost Price (INR),Initial Stock,Unit,SKU / Barcode,Image URL / Google Drive Link
+Ultratech PPC Cement 50kg,Structural Materials,Cement (OPC/PPC/RMC),380,310,250,Bags (50 kg),SKU-CEM-PPC50,https://drive.google.com/file/d/1ABC123EXAMPLE_DRIVE_ID/view?usp=sharing
+TMT Rebar 12mm Fe 550D,Structural Materials,TMT Steel Rods & Bars,58,50,5000,Kilograms,SKU-STL-TMT12,https://drive.google.com/file/d/1DEF456EXAMPLE_DRIVE_ID/view?usp=sharing
+Red Clay Bricks (Class I),Structural Materials,Red Bricks,8.5,6.5,10000,Pieces,SKU-BRK-RED,
+20mm Blue Metal Aggregate,Structural Materials,Stone Aggregates (5-8, 10mm),45,35,500,Cubic Feet,SKU-AGG-20MM,
+Interlocking Paver 60mm,Finishing & Architectural,Interlocking Paver Blocks,42,32,1500,Square Feet,SKU-PAV-60MM,
+Dr. Fixit Waterproofing 20L,Finishing & Architectural,Tile Adhesives & Waterproofing Chemicals,320,240,25,Kilograms,SKU-FIX-20L,
+CPVC Pipe 1 inch (3m),Plumbing & MEP,CPVC / UPVC / PVC Pipes,280,210,100,Meters,SKU-PIP-CPVC1,
+Water Tank 1000L Triple Layer,Plumbing & MEP,Water Storage Tanks,7500,5800,15,Liters,SKU-TNK-1000L,https://drive.google.com/file/d/1GHI789EXAMPLE_DRIVE_ID/view?usp=sharing

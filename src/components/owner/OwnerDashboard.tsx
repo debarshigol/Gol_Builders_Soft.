@@ -686,9 +686,14 @@ export const OwnerDashboard: React.FC<{ onViewInvoice: (inv: Invoice) => void }>
                       </td>
                       <td className="py-3 px-3 font-mono text-slate-400">{p.sku}</td>
                       <td className="py-3 px-3">
-                        <span className="px-2 py-0.5 rounded-md text-[10px] bg-slate-800 text-slate-300">
+                        <span className="px-2 py-0.5 rounded-md text-[10px] bg-slate-800 text-slate-300 block font-semibold w-fit">
                           {p.category}
                         </span>
+                        {p.subCategory && (
+                          <span className="text-[10px] text-amber-400 font-mono mt-0.5 block">
+                            {p.subCategory}
+                          </span>
+                        )}
                       </td>
                       <td className="py-3 px-3 text-right font-mono text-slate-400">₹{p.costPrice}</td>
                       

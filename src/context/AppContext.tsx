@@ -92,7 +92,7 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-const LOCAL_STORAGE_PREFIX = 'gol_building_materials_v8_';
+const LOCAL_STORAGE_PREFIX = 'gol_building_materials_v9_';
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [activeRole, setActiveRole] = useState<UserRole>('shopkeeper');
