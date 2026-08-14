@@ -114,6 +114,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [cart, setCart] = useState<CartItem[]>([]);
   const [lastGeneratedInvoice, setLastGeneratedInvoice] = useState<Invoice | null>(null);
 
+  // Hydration safety flag
+  const isHydratedRef = React.useRef(false);
+
   // Load from localStorage on mount (hydration safe)
   useEffect(() => {
     try {
@@ -132,11 +135,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     } catch (e) {
       console.warn('LocalStorage unavailable:', e);
+    } finally {
+      isHydratedRef.current = true;
     }
   }, []);
 
-  // Save changes to localStorage & document element
+  // Save changes to localStorage & document element (only after hydration)
   useEffect(() => {
+    if (!isHydratedRef.current) return;
     try {
       localStorage.setItem(LOCAL_STORAGE_PREFIX + 'products', JSON.stringify(products));
       localStorage.setItem(LOCAL_STORAGE_PREFIX + 'customers', JSON.stringify(customers));
@@ -159,7 +165,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (e.key === LOCAL_STORAGE_PREFIX + 'products' && e.newValue) {
         try {
           const parsed = JSON.parse(e.newValue);
-          if (Array.isArray(parsed)) setProducts(parsed);
+          if (Array.isArray(parsed)) {
+            setProducts(parsed);
+          }
         } catch (err) {}
       }
       if (e.key === LOCAL_STORAGE_PREFIX + 'customers' && e.newValue) {
@@ -622,19 +630,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
   };
 
-  // Owner Product Actions (Adds items directly to central products array & updates persistent storage)
+  // Owner Product Actions (Adds items directly to central products array)
   const addProduct = (productData: Omit<Product, 'id'>) => {
     const newProd: Product = {
       ...productData,
       id: `p-${Date.now()}`,
     };
-    setProducts(prev => {
-      const updated = [newProd, ...prev];
-      try {
-        localStorage.setItem(LOCAL_STORAGE_PREFIX + 'products', JSON.stringify(updated));
-      } catch (e) {}
-      return updated;
-    });
+    setProducts(prev => [newProd, ...prev]);
   };
 
   const bulkAddProducts = (productsData: Array<Omit<Product, 'id'>>) => {
@@ -643,43 +645,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ...data,
       id: `p-${now}-${idx}`,
     }));
-    setProducts(prev => {
-      const updated = [...newProds, ...prev];
-      try {
-        localStorage.setItem(LOCAL_STORAGE_PREFIX + 'products', JSON.stringify(updated));
-      } catch (e) {}
-      return updated;
-    });
+    setProducts(prev => [...newProds, ...prev]);
   };
 
   const updateProductStock = (productId: string, newStock: number) => {
-    setProducts(prev => {
-      const updated = prev.map(p => (p.id === productId ? { ...p, stock: Math.max(0, newStock) } : p));
-      try {
-        localStorage.setItem(LOCAL_STORAGE_PREFIX + 'products', JSON.stringify(updated));
-      } catch (e) {}
-      return updated;
-    });
+    setProducts(prev =>
+      prev.map(p => (p.id === productId ? { ...p, stock: Math.max(0, newStock) } : p))
+    );
   };
 
   const updateProductPrice = (productId: string, newPrice: number) => {
-    setProducts(prev => {
-      const updated = prev.map(p => (p.id === productId ? { ...p, price: Math.max(0, newPrice) } : p));
-      try {
-        localStorage.setItem(LOCAL_STORAGE_PREFIX + 'products', JSON.stringify(updated));
-      } catch (e) {}
-      return updated;
-    });
+    setProducts(prev =>
+      prev.map(p => (p.id === productId ? { ...p, price: Math.max(0, newPrice) } : p))
+    );
   };
 
   const deleteProduct = (productId: string) => {
-    setProducts(prev => {
-      const updated = prev.filter(p => p.id !== productId);
-      try {
-        localStorage.setItem(LOCAL_STORAGE_PREFIX + 'products', JSON.stringify(updated));
-      } catch (e) {}
-      return updated;
-    });
+    setProducts(prev => prev.filter(p => p.id !== productId));
     setCart(prev => prev.filter(item => item.product.id !== productId));
   };
 
