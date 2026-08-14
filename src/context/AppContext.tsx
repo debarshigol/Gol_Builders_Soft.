@@ -12,6 +12,10 @@ interface AppContextType {
   invoices: Invoice[];
   quotations: Quotation[];
   
+  // Theme State
+  theme: 'dark' | 'light';
+  toggleTheme: () => void;
+  
   // Billing Session State
   phoneSearchTerm: string;
   setPhoneSearchTerm: (term: string) => void;
@@ -97,6 +101,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [invoices, setInvoices] = useState<Invoice[]>(initialInvoices);
   const [quotations, setQuotations] = useState<Quotation[]>(initialQuotations);
 
+  // Theme State
+  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+
   // Billing Flow States
   const [phoneSearchTerm, setPhoneSearchTerm] = useState<string>('');
   const [activeCustomer, setActiveCustomer] = useState<Customer | null>(null);
@@ -114,27 +121,41 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const savedCustomers = localStorage.getItem(LOCAL_STORAGE_PREFIX + 'customers');
       const savedInvoices = localStorage.getItem(LOCAL_STORAGE_PREFIX + 'invoices');
       const savedQuotations = localStorage.getItem(LOCAL_STORAGE_PREFIX + 'quotations');
+      const savedTheme = localStorage.getItem(LOCAL_STORAGE_PREFIX + 'theme') as 'dark' | 'light' | null;
 
       if (savedProducts) setProducts(JSON.parse(savedProducts));
       if (savedCustomers) setCustomers(JSON.parse(savedCustomers));
       if (savedInvoices) setInvoices(JSON.parse(savedInvoices));
       if (savedQuotations) setQuotations(JSON.parse(savedQuotations));
+      if (savedTheme === 'light' || savedTheme === 'dark') {
+        setTheme(savedTheme);
+      }
     } catch (e) {
       console.warn('LocalStorage unavailable:', e);
     }
   }, []);
 
-  // Save changes to localStorage
+  // Save changes to localStorage & document element
   useEffect(() => {
     try {
       localStorage.setItem(LOCAL_STORAGE_PREFIX + 'products', JSON.stringify(products));
       localStorage.setItem(LOCAL_STORAGE_PREFIX + 'customers', JSON.stringify(customers));
       localStorage.setItem(LOCAL_STORAGE_PREFIX + 'invoices', JSON.stringify(invoices));
       localStorage.setItem(LOCAL_STORAGE_PREFIX + 'quotations', JSON.stringify(quotations));
+      localStorage.setItem(LOCAL_STORAGE_PREFIX + 'theme', theme);
+      if (theme === 'light') {
+        document.documentElement.classList.add('light-mode');
+      } else {
+        document.documentElement.classList.remove('light-mode');
+      }
     } catch (e) {
       console.warn('Failed to save to localStorage:', e);
     }
-  }, [products, customers, invoices, quotations]);
+  }, [products, customers, invoices, quotations, theme]);
+
+  const toggleTheme = () => {
+    setTheme(prev => (prev === 'dark' ? 'light' : 'dark'));
+  };
 
   // Phone Lookup Logic
   const lookupCustomerByPhone = (phoneInput: string) => {
@@ -207,15 +228,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateCartQuantity = (productId: string, quantity: number) => {
-    if (quantity <= 0) {
-      removeFromCart(productId);
-      return;
-    }
     setCart(prev =>
       prev.map(item => {
         if (item.product.id === productId) {
           const maxAvailable = item.product.stock;
-          return { product: item.product, quantity: Math.min(quantity, maxAvailable) };
+          return { product: item.product, quantity: Math.max(0, Math.min(quantity, maxAvailable)) };
         }
         return item;
       })
@@ -237,9 +254,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     discount: number = 0,
     collectedAmount?: number
   ): Invoice | null => {
-    if (!activeCustomer || cart.length === 0) return null;
+    const validItems = cart.filter(item => item.quantity > 0);
+    if (!activeCustomer || validItems.length === 0) return null;
 
-    const subtotal = cart.reduce((acc, item) => acc + item.product.price * item.quantity, 0);
+    const subtotal = validItems.reduce((acc, item) => acc + item.product.price * item.quantity, 0);
     const taxAmount = Number(((subtotal * taxRate) / 100).toFixed(2));
     const totalAmount = Math.max(0, Number((subtotal + taxAmount - discount).toFixed(2)));
 
@@ -256,7 +274,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       customerPhone: activeCustomer.phone,
       customerName: activeCustomer.name,
       customerAddress: activeCustomer.address,
-      items: [...cart],
+      items: validItems,
       subtotal,
       taxRate,
       taxAmount,
@@ -274,7 +292,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setProducts(prevProducts =>
       prevProducts.map(p => {
-        const cartItem = cart.find(c => c.product.id === p.id);
+        const cartItem = validItems.find(c => c.product.id === p.id);
         if (cartItem) {
           return { ...p, stock: Math.max(0, p.stock - cartItem.quantity) };
         }
@@ -609,6 +627,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   return (
     <AppContext.Provider
       value={{
+        theme,
+        toggleTheme,
         activeRole,
         setActiveRole,
         products,

@@ -121,3 +121,289 @@ body {
     color: #000000 !important;
   }
 }
+
+/* ==========================================================================
+   BLINKIT-STYLE OFF-WHITE LIGHT MODE DESIGN SYSTEM OVERRIDES (.light-mode)
+   ========================================================================== */
+html.light-mode {
+  --background: #f8f8f8;
+  --foreground: #1c1c1c;
+  --card-bg: #ffffff;
+  --glass-border: #eeeeee;
+  color-scheme: light;
+}
+
+html.light-mode body,
+html.light-mode div.min-h-screen,
+html.light-mode main,
+html.light-mode footer {
+  background-color: #f8f8f8 !important;
+  color: #1c1c1c !important;
+}
+
+/* All Outer Container Dark Background Overrides -> Off-White #f8f8f8 */
+html.light-mode .bg-slate-950,
+html.light-mode [class*="bg-slate-950"] {
+  background-color: #f8f8f8 !important;
+}
+
+/* SOFT LOW-OPACITY BLENDED BORDERS FOR MODAL SECTIONS & FORM CONTROLS IN LIGHT MODE */
+html.light-mode .border-slate-800,
+html.light-mode .border-slate-800\/80,
+html.light-mode .border-slate-700,
+html.light-mode .border-slate-700\/80,
+html.light-mode .border-slate-850 {
+  border-color: #f1f5f9 !important;
+}
+
+/* Modal Inner Container Sections Backgrounds & Soft Borders */
+html.light-mode .glass-modal div.bg-slate-950,
+html.light-mode .glass-modal div[class*="bg-slate-950"] {
+  background-color: #f8fafc !important;
+  border-color: #f1f5f9 !important;
+  box-shadow: none !important;
+}
+
+/* Soft Grey Pill Inputs without Heavy Outlines */
+html.light-mode input[type="text"],
+html.light-mode input[type="tel"],
+html.light-mode input[type="number"],
+html.light-mode select,
+html.light-mode textarea {
+  background-color: #f3f4f6 !important;
+  color: #111827 !important;
+  border: 1px solid #e5e7eb !important;
+  font-weight: 500 !important;
+  border-radius: 12px !important;
+  box-shadow: none !important;
+}
+
+html.light-mode input[type="text"]:focus,
+html.light-mode input[type="tel"]:focus,
+html.light-mode input[type="number"]:focus,
+html.light-mode select:focus,
+html.light-mode textarea:focus {
+  background-color: #ffffff !important;
+  border-color: #059669 !important;
+  outline: none !important;
+}
+
+/* Blinkit Style Header Navbar -> Pure White #ffffff */
+html.light-mode header {
+  background-color: #ffffff !important;
+  border-bottom: 1px solid #eeeeee !important;
+  color: #1c1c1c !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03) !important;
+}
+
+/* Blinkit Style Header Search Bar Input */
+html.light-mode header input[type="text"] {
+  background-color: #f3f4f6 !important;
+  color: #1f2937 !important;
+  border: 1px solid #e5e7eb !important;
+  font-weight: 500 !important;
+  border-radius: 12px !important;
+}
+
+html.light-mode header input::placeholder {
+  color: #9ca3af !important;
+  font-weight: 400 !important;
+}
+
+/* Sidebar Drawer Light Mode */
+html.light-mode aside {
+  background-color: #ffffff !important;
+  border-color: #eeeeee !important;
+  color: #1c1c1c !important;
+  box-shadow: 10px 0 30px rgba(0, 0, 0, 0.06) !important;
+}
+
+/* Blinkit Style Cards & Panels -> Pure White #ffffff */
+html.light-mode .glass-panel,
+html.light-mode .bg-slate-900,
+html.light-mode [class*="bg-slate-900"] {
+  background-color: #ffffff !important;
+  border: 1px solid #eeeeee !important;
+  color: #1c1c1c !important;
+}
+
+html.light-mode .glass-modal {
+  background-color: #ffffff !important;
+  border: 1px solid #e5e7eb !important;
+  color: #1c1c1c !important;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.12) !important;
+}
+
+/* Category Filter Tabs Light Mode */
+html.light-mode button.bg-slate-950 {
+  background-color: #ffffff !important;
+  color: #374151 !important;
+  border: 1px solid #e5e7eb !important;
+  font-weight: 600 !important;
+  border-radius: 12px !important;
+}
+
+html.light-mode button.bg-emerald-500 {
+  background-color: #059669 !important;
+  color: #ffffff !important;
+  border-color: #059669 !important;
+  font-weight: 800 !important;
+}
+
+html.light-mode button.bg-amber-500 {
+  background-color: #d97706 !important;
+  color: #ffffff !important;
+  border-color: #d97706 !important;
+  font-weight: 800 !important;
+}
+
+/* Blinkit Style Product Cards -> Pure White #ffffff with Off-White Container Background */
+html.light-mode .group,
+html.light-mode div.group {
+  background-color: #ffffff !important;
+  border: 1px solid #eeeeee !important;
+  border-radius: 16px !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04) !important;
+}
+
+/* Product Image Container Light Mode */
+html.light-mode .relative.w-full.h-28,
+html.light-mode .relative.w-full.h-32 {
+  background-color: #ffffff !important;
+  border: none !important;
+}
+
+/* Blinkit Product Titles & Prices */
+html.light-mode h4 {
+  color: #1c1c1c !important;
+  font-weight: 700 !important;
+  font-size: 13px !important;
+  line-height: 1.3 !important;
+}
+
+html.light-mode .tabular-nums,
+html.light-mode .font-mono.tabular-nums {
+  color: #111827 !important;
+  font-weight: 800 !important;
+}
+
+/* Blinkit Stock Badges Light Mode */
+html.light-mode .bg-slate-950\/90 {
+  background-color: #ecfdf5 !important;
+  color: #047857 !important;
+  border: 1px solid #d1fae5 !important;
+  font-weight: 700 !important;
+}
+
+/* Blinkit Style ADD Button */
+html.light-mode button.border-2.border-emerald-500,
+html.light-mode button.border-emerald-500 {
+  background-color: #ffffff !important;
+  color: #059669 !important;
+  border: 1.5px solid #059669 !important;
+  font-weight: 800 !important;
+  border-radius: 10px !important;
+  box-shadow: none !important;
+}
+
+html.light-mode button.border-2.border-emerald-500:hover,
+html.light-mode button.border-emerald-500:hover {
+  background-color: #059669 !important;
+  color: #ffffff !important;
+}
+
+html.light-mode button.border-2.border-amber-500,
+html.light-mode button.border-amber-500 {
+  background-color: #ffffff !important;
+  color: #d97706 !important;
+  border: 1.5px solid #d97706 !important;
+  font-weight: 800 !important;
+  border-radius: 10px !important;
+  box-shadow: none !important;
+}
+
+html.light-mode button.border-2.border-amber-500:hover,
+html.light-mode button.border-amber-500:hover {
+  background-color: #d97706 !important;
+  color: #ffffff !important;
+}
+
+/* Stepper Control Container & Inputs Light Mode */
+html.light-mode .bg-emerald-950\/80,
+html.light-mode .bg-emerald-950\/90 {
+  background-color: #ecfdf5 !important;
+  border: 1.5px solid #a7f3d0 !important;
+  border-radius: 10px !important;
+}
+
+html.light-mode .bg-amber-950\/80,
+html.light-mode .bg-amber-950\/90 {
+  background-color: #fffbeb !important;
+  border: 1.5px solid #fde68a !important;
+  border-radius: 10px !important;
+}
+
+html.light-mode .bg-emerald-600 {
+  background-color: #059669 !important;
+  color: #ffffff !important;
+}
+
+html.light-mode .bg-amber-600 {
+  background-color: #d97706 !important;
+  color: #ffffff !important;
+}
+
+/* Blinkit Style Header Cart Button */
+html.light-mode header button.bg-emerald-500 {
+  background-color: #059669 !important;
+  color: #ffffff !important;
+  border-color: #047857 !important;
+}
+
+/* Typography High Contrast Global */
+html.light-mode .text-white {
+  color: #1c1c1c !important;
+}
+
+html.light-mode .text-slate-100,
+html.light-mode .text-slate-200,
+html.light-mode .text-slate-300 {
+  color: #374151 !important;
+}
+
+html.light-mode .text-slate-400,
+html.light-mode .text-slate-500 {
+  color: #6b7280 !important;
+  font-weight: 500 !important;
+}
+
+/* Table Light Mode Overrides */
+html.light-mode table th {
+  background-color: #f9fafb !important;
+  color: #374151 !important;
+  border-color: #e5e7eb !important;
+  font-weight: 700 !important;
+}
+
+html.light-mode table td {
+  border-color: #f3f4f6 !important;
+  color: #111827 !important;
+  font-weight: 500 !important;
+}
+
+html.light-mode table tr:hover {
+  background-color: #f9fafb !important;
+}
+
+/* Scrollbar Light Mode */
+html.light-mode ::-webkit-scrollbar-track {
+  background: #f8f8f8;
+}
+
+html.light-mode ::-webkit-scrollbar-thumb {
+  background: #e5e7eb;
+}
+
+html.light-mode ::-webkit-scrollbar-thumb:hover {
+  background: #d1d5db;
+}

@@ -351,8 +351,8 @@ Chrome Plated Bib Cock Tap,Kitchen & Bath,450,320,40,Piece,SKU-TAP-CPBIB,🚿`;
   const duplicateCount = parsedProducts.filter(p => p.isDuplicate).length;
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
-      <div className="glass-modal rounded-3xl max-w-2xl w-full overflow-hidden shadow-2xl animate-scaleUp text-slate-100 border border-slate-700/60">
+    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
+      <div className="glass-modal rounded-3xl max-w-2xl w-full max-h-[92vh] flex flex-col overflow-hidden shadow-2xl animate-scaleUp text-slate-100 border border-slate-700/60">
         
         {/* Modal Header & Navigation Tabs */}
         <div className="bg-slate-950 px-6 py-4 border-b border-slate-800 flex items-center justify-between">

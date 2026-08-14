@@ -18,13 +18,39 @@ import {
   X,
   FileText,
   ShoppingBag,
-  Check
+  Check,
+  Building2,
+  DollarSign,
+  AlertCircle
 } from 'lucide-react';
 
-export const QuotationSection: React.FC = () => {
+interface QuotationSectionProps {
+  searchTerm?: string;
+  setSearchTerm?: (term: string) => void;
+  isCartModalOpen?: boolean;
+  setIsCartModalOpen?: (open: boolean) => void;
+}
+
+export const QuotationSection: React.FC<QuotationSectionProps> = ({
+  searchTerm = '',
+  setSearchTerm,
+  isCartModalOpen: externalIsCartModalOpen,
+  setIsCartModalOpen: externalSetIsCartModalOpen,
+}) => {
   const { products, customers, quotations, createQuotation } = useApp();
 
-  // Customer Form State
+  // Local Modal state fallback if external state is omitted
+  const [internalIsCartModalOpen, setInternalIsCartModalOpen] = useState<boolean>(false);
+  const isModalOpen = externalIsCartModalOpen !== undefined ? externalIsCartModalOpen : internalIsCartModalOpen;
+  const setIsModalOpen = externalSetIsCartModalOpen || setInternalIsCartModalOpen;
+
+  // Selected Category filter
+  const [selectedCategory, setSelectedCategory] = useState<string>('All');
+
+  // Quotation Cart items state
+  const [quoteCart, setQuoteCart] = useState<Array<{ product: Product; quantity: number; quotedPrice: number }>>([]);
+
+  // Customer Form details
   const [custName, setCustName] = useState<string>('');
   const [custPhone, setCustPhone] = useState<string>('');
   const [custAddress, setCustAddress] = useState<string>('');
@@ -32,588 +58,605 @@ export const QuotationSection: React.FC = () => {
   const [taxRate, setTaxRate] = useState<number>(18);
   const [discount, setDiscount] = useState<number>(0);
   const [validDays, setValidDays] = useState<number>(14);
+  const [errorMsg, setErrorMsg] = useState<string>('');
 
-  // Selected Items for Quotation
-  const [quoteItems, setQuoteItems] = useState<Array<{ product: Product; quantity: number; quotedPrice: number }>>([]);
-  
-  // Keyword Search State for Materials Selection
-  const [materialSearch, setMaterialSearch] = useState<string>('');
-
-  // Search & Filter State for Saved Quotations
-  const [searchTerm, setSearchTerm] = useState<string>('');
+  // Search Filter for Recent Saved Quotations
+  const [quotationSearchTerm, setQuotationSearchTerm] = useState<string>('');
   const [viewingQuotation, setViewingQuotation] = useState<Quotation | null>(null);
 
-  // Auto-fill customer details from existing directory
-  const handleQuickSelectCustomer = (c: typeof customers[0]) => {
-    setCustName(c.name);
-    setCustPhone(c.phone);
-    setCustAddress(c.address);
-  };
+  // Available Categories
+  const categories = useMemo(() => {
+    const set = new Set(products.map(p => p.category));
+    return ['All', ...Array.from(set)];
+  }, [products]);
 
-  // Keyword Matching Products (requires at least 1 character)
-  const cleanMatSearch = materialSearch.trim().toLowerCase();
-  const searchResults = useMemo(() => {
-    if (!cleanMatSearch) return [];
-    return products.filter(p =>
-      p.name.toLowerCase().includes(cleanMatSearch) ||
-      p.category.toLowerCase().includes(cleanMatSearch) ||
-      p.sku.toLowerCase().includes(cleanMatSearch)
-    );
-  }, [products, cleanMatSearch]);
+  // Filtered Products for 100% full width grid
+  const filteredProducts = useMemo(() => {
+    return products.filter(p => {
+      const matchesSearch =
+        !searchTerm.trim() ||
+        p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        p.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        p.category.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesCat = selectedCategory === 'All' || p.category === selectedCategory;
+      return matchesSearch && matchesCat;
+    });
+  }, [products, searchTerm, selectedCategory]);
 
-  const handleSelectProduct = (prod: Product) => {
-    setQuoteItems(prev => {
-      const existingIdx = prev.findIndex(i => i.product.id === prod.id);
-      if (existingIdx > -1) {
+  // Add / Remove Quote Cart Helpers
+  const addToQuoteCart = (prod: Product) => {
+    setQuoteCart(prev => {
+      const idx = prev.findIndex(i => i.product.id === prod.id);
+      if (idx > -1) {
         const updated = [...prev];
-        updated[existingIdx].quantity += 1;
+        updated[idx].quantity += 1;
         return updated;
       }
       return [...prev, { product: prod, quantity: 1, quotedPrice: prod.price }];
     });
-    setMaterialSearch('');
   };
 
-  const handleUpdateItemQty = (prodId: string, qty: number) => {
-    if (qty <= 0) {
-      setQuoteItems(prev => prev.filter(i => i.product.id !== prodId));
-      return;
-    }
-    setQuoteItems(prev =>
-      prev.map(i => (i.product.id === prodId ? { ...i, quantity: qty } : i))
+  const updateQuoteQuantity = (productId: string, quantity: number) => {
+    setQuoteCart(prev =>
+      prev.map(item => {
+        if (item.product.id === productId) {
+          return { ...item, quantity: Math.max(0, quantity) };
+        }
+        return item;
+      })
     );
   };
 
-  const handleUpdateItemPrice = (prodId: string, price: number) => {
-    setQuoteItems(prev =>
-      prev.map(i => (i.product.id === prodId ? { ...i, quotedPrice: Math.max(0, price) } : i))
+  const updateQuotedPrice = (productId: string, price: number) => {
+    setQuoteCart(prev =>
+      prev.map(item => {
+        if (item.product.id === productId) {
+          return { ...item, quotedPrice: Math.max(0, price) };
+        }
+        return item;
+      })
     );
   };
 
-  const handleRemoveItem = (prodId: string) => {
-    setQuoteItems(prev => prev.filter(i => i.product.id !== prodId));
+  const removeFromQuoteCart = (productId: string) => {
+    setQuoteCart(prev => prev.filter(i => i.product.id !== productId));
   };
 
-  // Financial calculations
-  const subtotal = useMemo(() => {
-    return quoteItems.reduce((sum, item) => sum + item.quotedPrice * item.quantity, 0);
-  }, [quoteItems]);
+  // Calculations
+  const validQuoteItems = quoteCart.filter(i => i.quantity > 0);
+  const totalCartItemsCount = validQuoteItems.reduce((sum, item) => sum + item.quantity, 0);
+  const subtotal = validQuoteItems.reduce((sum, item) => sum + item.quotedPrice * item.quantity, 0);
+  const taxAmount = Number(((subtotal * taxRate) / 100).toFixed(2));
+  const grandTotal = Math.max(0, Number((subtotal + taxAmount - discount).toFixed(2)));
 
-  const taxAmount = useMemo(() => {
-    return Number(((subtotal * taxRate) / 100).toFixed(2));
-  }, [subtotal, taxRate]);
+  // Generate & Print Quotation Handler
+  const handleGenerateQuotation = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setErrorMsg('');
 
-  const totalAmount = useMemo(() => {
-    return Math.max(0, Number((subtotal + taxAmount - discount).toFixed(2)));
-  }, [subtotal, taxAmount, discount]);
-
-  // Handle Save & Generate Quotation
-  const handleSaveQuotation = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!custName.trim()) {
-      alert('Please enter customer full name.');
-      return;
-    }
-    if (!custPhone.trim() || custPhone.trim().replace(/\D/g, '').length < 10) {
-      alert('Please enter a valid 10-digit mobile number.');
-      return;
-    }
-    if (quoteItems.length === 0) {
-      alert('Please select at least one material item for the quotation.');
+    if (validQuoteItems.length === 0) {
+      setErrorMsg('Please add at least one material to the quotation cart.');
       return;
     }
 
-    const created = createQuotation({
+    if (!custName.trim() || !custPhone.trim()) {
+      setErrorMsg('Please enter Customer Name and Phone Number.');
+      return;
+    }
+
+    const createdQuotation = createQuotation({
       customerName: custName,
       customerPhone: custPhone,
       customerAddress: custAddress,
       notes,
-      items: quoteItems,
+      items: validQuoteItems,
       taxRate,
       discount,
       validDays,
     });
 
-    // Reset Form
+    // Reset Form & Cart
+    setQuoteCart([]);
     setCustName('');
     setCustPhone('');
     setCustAddress('');
     setNotes('');
-    setQuoteItems([]);
     setDiscount(0);
-    setMaterialSearch('');
+    setIsModalOpen(false);
 
-    // Open Printable Modal
-    setViewingQuotation(created);
+    // Open Printable Estimate Modal
+    setViewingQuotation(createdQuotation);
   };
 
-  // Search Filter for Saved Quotations (Only returns items when cleanSearch is non-empty)
-  const cleanSearch = searchTerm.trim().toLowerCase();
-  const digitsOnly = cleanSearch.replace(/\D/g, '');
-
+  // Filtered Saved Quotations
+  const cleanSearch = quotationSearchTerm.trim().toLowerCase();
   const filteredQuotations = useMemo(() => {
-    if (!cleanSearch) return [];
-
-    return quotations.filter(q => {
-      const matchesName = q.customerName.toLowerCase().includes(cleanSearch);
-      const matchesPhone = digitsOnly.length > 0 ? q.customerPhone.replace(/\D/g, '').includes(digitsOnly) : false;
-      const matchesId = q.id.toLowerCase().includes(cleanSearch);
-      return matchesName || matchesPhone || matchesId;
-    });
-  }, [quotations, cleanSearch, digitsOnly]);
+    if (!cleanSearch) return quotations;
+    return quotations.filter(q =>
+      q.customerName.toLowerCase().includes(cleanSearch) ||
+      q.customerPhone.includes(cleanSearch) ||
+      q.id.toLowerCase().includes(cleanSearch)
+    );
+  }, [quotations, cleanSearch]);
 
   return (
-    <div className="space-y-8">
-      {/* 1. MAKE QUOTATION BUILDER FORM */}
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-7 shadow-2xl relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-80 h-80 bg-amber-500/5 rounded-full blur-3xl -z-0 pointer-events-none" />
-
-        {/* Section Header */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 pb-4 border-b border-slate-800">
-          <div>
-            <div className="flex items-center space-x-2">
-              <span className="px-2.5 py-1 rounded-md bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-bold font-mono uppercase">
-                Make Customer Price Estimate
-              </span>
-            </div>
-            <h2 className="text-xl sm:text-2xl font-bold text-white mt-1.5 flex items-center gap-2">
-              <FileCheck2 className="w-6 h-6 text-amber-400" />
-              Generate Customer Quotation
-            </h2>
-            <p className="text-xs text-slate-400 mt-1">
-              Store customer name, phone number, address, and quoted materials so the owner can conduct targeted follow-up sales calls.
-            </p>
-          </div>
-
-          {/* Quick Select Customer Pills */}
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[11px] text-slate-400 font-medium flex items-center gap-1">
-              <Sparkles className="w-3 h-3 text-amber-400" /> Quick Autofill:
-            </span>
-            {customers.slice(0, 3).map(c => (
-              <button
-                key={c.id}
-                type="button"
-                onClick={() => handleQuickSelectCustomer(c)}
-                className="text-xs px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 transition flex items-center gap-1"
-              >
-                <User className="w-3 h-3 text-amber-400" />
-                <span>{c.name.split(' ')[0]}</span>
-              </button>
-            ))}
-          </div>
+    <div className="space-y-6 font-sans">
+      
+      {/* 100% FULL WIDTH PRODUCT CATALOG GRID (POS & QUOTATION STYLE) */}
+      <div className="w-full flex flex-col font-sans">
+        
+        {/* Top Category Filter Tabs */}
+        <div className="flex items-center space-x-2 overflow-x-auto pb-3 mb-4 scrollbar-none">
+          {categories.map(cat => (
+            <button
+              key={cat}
+              onClick={() => setSelectedCategory(cat)}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+                selectedCategory === cat
+                  ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                  : 'bg-slate-950 border border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800'
+              }`}
+            >
+              {cat}
+            </button>
+          ))}
         </div>
 
-        <form onSubmit={handleSaveQuotation} className="space-y-6">
-          {/* Customer Details Block */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 bg-slate-950/70 p-4 rounded-2xl border border-slate-800">
-            <div>
-              <label className="block text-xs font-bold text-slate-300 mb-1">
-                Customer Full Name <span className="text-amber-400">*</span>
-              </label>
-              <div className="relative">
-                <User className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
-                <input
-                  type="text"
-                  required
-                  value={custName}
-                  onChange={e => setCustName(e.target.value)}
-                  placeholder="e.g. Rajesh Kumar (Buildcon)"
-                  className="w-full pl-9 pr-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white text-xs font-medium focus:outline-none focus:border-amber-500 transition"
-                />
-              </div>
+        {/* 5-Column Responsive Seamless Product Cards Grid */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-5 2xl:grid-cols-5 gap-3 sm:gap-4">
+          {filteredProducts.length === 0 ? (
+            <div className="col-span-full py-12 text-center text-slate-500 bg-slate-900/40 border border-slate-800 rounded-3xl">
+              No products matching "{searchTerm}"
             </div>
+          ) : (
+            filteredProducts.map(product => {
+              const quoteItem = quoteCart.find(i => i.product.id === product.id);
+              const isOutOfStock = product.stock <= 0;
 
-            <div>
-              <label className="block text-xs font-bold text-slate-300 mb-1">
-                Customer 10-Digit Mobile # <span className="text-amber-400">*</span>
-              </label>
-              <div className="relative">
-                <Phone className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
-                <input
-                  type="tel"
-                  required
-                  value={custPhone}
-                  onChange={e => setCustPhone(e.target.value)}
-                  placeholder="e.g. 9876543210"
-                  className="w-full pl-9 pr-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white text-xs font-mono font-medium focus:outline-none focus:border-amber-500 transition"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-300 mb-1">Delivery / Site Address</label>
-              <div className="relative">
-                <MapPin className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
-                <input
-                  type="text"
-                  value={custAddress}
-                  onChange={e => setCustAddress(e.target.value)}
-                  placeholder="e.g. Site 42, Sector 4, Kakdwip"
-                  className="w-full pl-9 pr-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white text-xs font-medium focus:outline-none focus:border-amber-500 transition"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* KEYWORD MATERIAL SEARCH BAR */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <ShoppingBag className="w-4 h-4 text-amber-400" />
-                Search & Select Material Items for Quotation
-              </h3>
-              <span className="text-[11px] text-slate-400">
-                Type keywords like <strong className="text-amber-400">cement, steel, sand, brick, pipe</strong>
-              </span>
-            </div>
-
-            {/* Keyword Search Input */}
-            <div className="relative">
-              <Search className="w-5 h-5 text-slate-400 absolute left-4 top-3.5 pointer-events-none" />
-              <input
-                type="text"
-                value={materialSearch}
-                onChange={e => setMaterialSearch(e.target.value)}
-                placeholder="Type keyword to search materials (e.g. 'cement', 'steel', 'sand', 'brick', 'fixit')..."
-                className="w-full pl-12 pr-10 py-3 bg-slate-950 border border-slate-800 rounded-2xl text-white text-sm font-mono placeholder-slate-500 focus:outline-none focus:border-amber-500 transition-all shadow-inner"
-              />
-              {materialSearch && (
-                <button
-                  type="button"
-                  onClick={() => setMaterialSearch('')}
-                  className="absolute right-3.5 top-3 text-slate-400 hover:text-white p-1"
+              return (
+                <div
+                  key={product.id}
+                  className={`p-3 rounded-2xl border transition-all duration-300 flex flex-col justify-between group ${
+                    isOutOfStock
+                      ? 'bg-slate-950/40 border-slate-850 opacity-60'
+                      : quoteItem && quoteItem.quantity > 0
+                      ? 'bg-slate-950 border-amber-500/60 shadow-lg shadow-amber-500/10'
+                      : 'bg-slate-950 border-slate-800/90 hover:border-amber-500/40 hover:shadow-xl'
+                  }`}
                 >
-                  <X className="w-4 h-4" />
-                </button>
-              )}
-            </div>
+                  {/* Image Emoji Container */}
+                  <div className="relative w-full h-28 sm:h-32 rounded-xl bg-slate-900/90 border border-slate-800/80 flex items-center justify-center overflow-hidden p-2.5 group-hover:border-slate-700 transition">
+                    <span className="absolute top-2 right-2 text-[10px] font-mono px-2 py-0.5 rounded-md font-bold z-10 bg-slate-950/90 text-amber-400 border border-amber-500/30">
+                      {product.unit}
+                    </span>
 
-            {/* Material Keyword Search Results Container */}
-            {cleanMatSearch.length > 0 && (
-              <div className="bg-slate-950 border border-slate-800 rounded-2xl p-3 shadow-xl space-y-2 animate-fadeIn max-h-60 overflow-y-auto">
-                <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-1">
-                  Search Results ({searchResults.length} material{searchResults.length !== 1 && 's'} found):
-                </div>
-
-                {searchResults.length === 0 ? (
-                  <div className="text-xs text-slate-500 py-3 text-center">
-                    No materials found matching &quot;{materialSearch}&quot;.
+                    <span className="text-4xl sm:text-5xl group-hover:scale-110 transition-transform duration-300 select-none filter drop-shadow-md">
+                      {product.imageEmoji}
+                    </span>
                   </div>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {searchResults.map(prod => {
-                      const isAlreadyAdded = quoteItems.some(i => i.product.id === prod.id);
 
-                      return (
-                        <div
-                          key={prod.id}
-                          onClick={() => handleSelectProduct(prod)}
-                          className={`p-2.5 rounded-xl border transition cursor-pointer flex items-center justify-between ${
-                            isAlreadyAdded
-                              ? 'bg-amber-500/10 border-amber-500/30 text-amber-300'
-                              : 'bg-slate-900 hover:bg-slate-800 border-slate-800 text-slate-200'
-                          }`}
-                        >
-                          <div className="flex items-center space-x-2.5 overflow-hidden">
-                            <span className="text-xl shrink-0">{prod.imageEmoji}</span>
-                            <div className="truncate">
-                              <h4 className="text-xs font-bold text-white truncate">{prod.name}</h4>
-                              <p className="text-[10px] text-slate-400 font-mono">
-                                Base: ₹{prod.price}/{prod.unit} • SKU: {prod.sku}
-                              </p>
-                            </div>
-                          </div>
+                  {/* Info Details */}
+                  <div className="mt-3 flex-1 flex flex-col justify-between">
+                    <div>
+                      <h4 className="font-bold text-xs sm:text-sm text-white group-hover:text-amber-300 transition line-clamp-2 leading-snug">
+                        {product.name}
+                      </h4>
+                      <div className="flex items-center space-x-1.5 mt-1">
+                        <span className="text-[10px] text-slate-500 truncate">
+                          {product.category}
+                        </span>
+                      </div>
+                    </div>
 
+                    {/* Pricing & Add / Stepper */}
+                    <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-slate-800/80">
+                      <div>
+                        <div className="text-base font-black text-white font-mono tabular-nums leading-none">
+                          ₹{product.price.toLocaleString()}
+                        </div>
+                      </div>
+
+                      {quoteItem && quoteItem.quantity > 0 ? (
+                        <div className="flex items-center space-x-1 bg-amber-950/80 border border-amber-500/60 rounded-xl p-1 shadow-sm">
                           <button
                             type="button"
-                            className={`px-2.5 py-1 rounded-lg text-xs font-bold shrink-0 transition flex items-center gap-1 ${
-                              isAlreadyAdded
-                                ? 'bg-amber-500 text-slate-950'
-                                : 'bg-slate-800 group-hover:bg-amber-500 text-amber-400 hover:text-slate-950 border border-slate-700'
-                            }`}
+                            onClick={() => {
+                              if (quoteItem.quantity <= 1) {
+                                removeFromQuoteCart(product.id);
+                              } else {
+                                updateQuoteQuantity(product.id, quoteItem.quantity - 1);
+                              }
+                            }}
+                            className="w-6 h-6 rounded-lg bg-amber-800 hover:bg-amber-700 text-white flex items-center justify-center text-xs font-bold transition"
                           >
-                            {isAlreadyAdded ? <Check className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
-                            <span>{isAlreadyAdded ? 'Added' : 'Select'}</span>
+                            -
+                          </button>
+                          <input
+                            type="number"
+                            min="1"
+                            max={product.stock}
+                            value={quoteItem.quantity === 0 ? '' : quoteItem.quantity}
+                            onChange={e => {
+                              const val = e.target.value === '' ? 0 : parseInt(e.target.value, 10);
+                              updateQuoteQuantity(product.id, isNaN(val) ? 0 : val);
+                            }}
+                            className="w-10 text-center bg-slate-950 text-white font-mono font-black text-xs py-0.5 border border-amber-500/40 rounded focus:outline-none focus:border-amber-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => updateQuoteQuantity(product.id, quoteItem.quantity + 1)}
+                            className="w-6 h-6 rounded-lg bg-amber-800 hover:bg-amber-700 text-white flex items-center justify-center text-xs font-bold transition"
+                          >
+                            +
                           </button>
                         </div>
-                      );
-                    })}
+                      ) : (
+                        <button
+                          onClick={() => addToQuoteCart(product)}
+                          className="px-3.5 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border-2 border-amber-500 font-extrabold rounded-xl text-xs uppercase tracking-wider transition hover:scale-105 shadow-sm flex items-center space-x-1"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>ADD</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
-                )}
-              </div>
-            )}
-
-            {/* Selected Quotation Items Table */}
-            {quoteItems.length === 0 ? (
-              <div className="bg-slate-950/50 border border-dashed border-slate-800 rounded-2xl p-8 text-center text-xs text-slate-400">
-                No materials added to this quotation yet. Type keywords in the material search bar above and click to select items.
-              </div>
-            ) : (
-              <div className="bg-slate-950 border border-slate-800 rounded-2xl overflow-hidden shadow-inner">
-                <div className="px-4 py-2.5 bg-slate-900 border-b border-slate-800 flex items-center justify-between text-xs font-bold text-slate-300">
-                  <span>Selected Quotation Materials ({quoteItems.length})</span>
-                  <span className="text-[11px] text-amber-400 font-normal">Adjust quantity and quoted price for each item below</span>
                 </div>
+              );
+            })
+          )}
+        </div>
+      </div>
 
-                <table className="w-full text-left text-xs text-slate-200">
-                  <thead className="bg-slate-900/60 text-slate-400 font-bold uppercase text-[10px] border-b border-slate-800">
-                    <tr>
-                      <th className="px-4 py-2.5">Material Description</th>
-                      <th className="px-4 py-2.5 text-center">Quantity</th>
-                      <th className="px-4 py-2.5 text-right">Quoted Rate (₹)</th>
-                      <th className="px-4 py-2.5 text-right">Line Total (₹)</th>
-                      <th className="px-4 py-2.5 text-center">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800/60 font-mono">
-                    {quoteItems.map((item, idx) => (
-                      <tr key={idx} className="hover:bg-slate-900/50">
-                        <td className="px-4 py-3 font-sans font-medium text-white">
-                          <span className="mr-2">{item.product.imageEmoji}</span>
-                          {item.product.name}
-                          <span className="ml-1 text-[10px] text-slate-500 font-mono block sm:inline">
-                            (Base: ₹{item.product.price}/{item.product.unit})
-                          </span>
-                        </td>
+      {/* POPUP CHECKOUT MODAL (GENERATE CUSTOMER QUOTATION) */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 overflow-y-auto animate-fadeIn">
+          <div className="glass-modal border border-slate-700/60 rounded-3xl max-w-2xl w-full max-h-[92vh] flex flex-col shadow-2xl animate-scaleUp text-slate-100 overflow-hidden relative">
+            
+            {/* Modal Header */}
+            <div className="p-4 sm:p-5 bg-slate-950 border-b border-slate-800 flex items-center justify-between shrink-0">
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 font-bold">
+                  <FileCheck2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center space-x-2">
+                    <h3 className="text-base sm:text-lg font-extrabold text-white">Generate Customer Quotation</h3>
+                    <span className="bg-amber-500/20 text-amber-300 text-xs font-mono font-bold px-2 py-0.5 rounded-full border border-amber-500/30">
+                      {totalCartItemsCount} Items
+                    </span>
+                  </div>
+                </div>
+              </div>
 
-                        <td className="px-4 py-3 text-center">
-                          <div className="inline-flex items-center space-x-1">
+              <div className="flex items-center space-x-2">
+                {quoteCart.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setQuoteCart([])}
+                    className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1 font-bold px-2.5 py-1 rounded-lg bg-red-500/10 border border-red-500/20"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" /> Clear Items
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setIsModalOpen(false)}
+                  className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body (Scrollable) */}
+            <form onSubmit={handleGenerateQuotation} className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-5">
+              
+              {errorMsg && (
+                <div className="p-3 bg-red-500/15 border border-red-500/30 rounded-xl text-red-300 text-xs flex items-center gap-2 font-medium">
+                  <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+                  <span>{errorMsg}</span>
+                </div>
+              )}
+
+              {/* Quoted Items Breakdown List */}
+              <div>
+                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2.5 flex items-center gap-1">
+                  <ShoppingBag className="w-3.5 h-3.5 text-amber-400" /> Quoted Materials Breakdown
+                </h4>
+
+                {validQuoteItems.length === 0 ? (
+                  <div className="py-8 text-center text-slate-500 border border-dashed border-slate-800 rounded-2xl">
+                    No items in quote cart. Add materials from the catalog behind this modal.
+                  </div>
+                ) : (
+                  <div className="space-y-2.5 max-h-56 overflow-y-auto pr-1">
+                    {validQuoteItems.map(item => (
+                      <div
+                        key={item.product.id}
+                        className="flex items-center justify-between p-3 bg-slate-950 rounded-2xl border border-slate-800/80 text-xs shadow-sm"
+                      >
+                        <div className="flex items-center space-x-3 overflow-hidden">
+                          <span className="text-2xl">{item.product.imageEmoji}</span>
+                          <div className="truncate">
+                            <div className="font-bold text-white truncate text-xs sm:text-sm">{item.product.name}</div>
+                            <div className="flex items-center space-x-1.5 mt-0.5">
+                              <span className="text-slate-400 font-mono text-[11px]">Quoted Rate: ₹</span>
+                              <input
+                                type="number"
+                                min="0"
+                                value={item.quotedPrice}
+                                onChange={e => updateQuotedPrice(item.product.id, parseFloat(e.target.value) || 0)}
+                                className="w-20 px-1.5 py-0.5 bg-slate-900 text-amber-400 font-mono font-bold text-xs border border-slate-700 rounded focus:outline-none focus:border-amber-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                              />
+                              <span className="text-slate-500 text-[10px]">/ {item.product.unit}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center space-x-3 shrink-0">
+                          {/* Spacious Quantity Stepper */}
+                          <div className="flex items-center space-x-1.5 bg-amber-950/80 border border-amber-500/60 rounded-2xl p-1 shadow-md">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (item.quantity <= 1) {
+                                  removeFromQuoteCart(item.product.id);
+                                } else {
+                                  updateQuoteQuantity(item.product.id, item.quantity - 1);
+                                }
+                              }}
+                              className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-amber-600 hover:bg-amber-500 active:scale-95 text-white font-black text-sm flex items-center justify-center transition shrink-0 shadow-sm"
+                            >
+                              -
+                            </button>
                             <input
                               type="number"
                               min="1"
-                              value={item.quantity}
-                              onChange={e => handleUpdateItemQty(item.product.id, Number(e.target.value))}
-                              className="w-20 px-2 py-1 bg-slate-900 border border-slate-800 rounded-lg text-center text-white font-bold font-mono focus:outline-none focus:border-amber-500"
+                              value={item.quantity === 0 ? '' : item.quantity}
+                              onChange={e => {
+                                const val = e.target.value === '' ? 0 : parseInt(e.target.value, 10);
+                                updateQuoteQuantity(item.product.id, isNaN(val) ? 0 : val);
+                              }}
+                              className="w-12 sm:w-16 text-center bg-slate-950 text-white font-mono font-black text-xs sm:text-sm py-1 border border-amber-500/50 rounded-xl focus:outline-none focus:border-amber-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                             />
-                            <span className="text-[10px] text-slate-400 font-sans">{item.product.unit}</span>
+                            <button
+                              type="button"
+                              onClick={() => updateQuoteQuantity(item.product.id, item.quantity + 1)}
+                              className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-amber-600 hover:bg-amber-500 active:scale-95 text-white font-black text-sm flex items-center justify-center transition shrink-0 shadow-sm"
+                            >
+                              +
+                            </button>
                           </div>
-                        </td>
 
-                        <td className="px-4 py-3 text-right">
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.1"
-                            value={item.quotedPrice}
-                            onChange={e => handleUpdateItemPrice(item.product.id, Number(e.target.value))}
-                            className="w-28 px-2 py-1 bg-slate-900 border border-slate-800 rounded-lg text-right text-amber-400 font-bold font-mono focus:outline-none focus:border-amber-500"
-                          />
-                        </td>
+                          <div className="w-16 text-right font-black text-amber-400 font-mono text-sm">
+                            ₹{(item.quotedPrice * item.quantity).toLocaleString()}
+                          </div>
 
-                        <td className="px-4 py-3 text-right font-bold text-emerald-400 text-sm">
-                          ₹{(item.quotedPrice * item.quantity).toLocaleString('en-IN')}
-                        </td>
-
-                        <td className="px-4 py-3 text-center">
                           <button
                             type="button"
-                            onClick={() => handleRemoveItem(item.product.id)}
-                            className="p-1.5 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg transition"
-                            title="Remove item"
+                            onClick={() => removeFromQuoteCart(item.product.id)}
+                            className="text-slate-500 hover:text-red-400 transition p-1"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
-                        </td>
-                      </tr>
+                        </div>
+                      </div>
                     ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-
-          {/* Quotation Remarks & Financial Totals Footer */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-end pt-2">
-            <div>
-              <label className="block text-xs font-bold text-slate-300 mb-1">
-                Follow-up Remarks / Target Notes (Visible to Owner)
-              </label>
-              <textarea
-                value={notes}
-                onChange={e => setNotes(e.target.value)}
-                rows={3}
-                placeholder="e.g. Inquired for 3-storey building foundation. Wants bulk discount on steel."
-                className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs placeholder-slate-500 focus:outline-none focus:border-amber-500 transition"
-              />
-            </div>
-
-            <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 space-y-2 font-mono text-xs text-right">
-              <div className="flex justify-between text-slate-400">
-                <span>Quotation Subtotal:</span>
-                <span className="font-bold text-white">₹{subtotal.toLocaleString('en-IN')}</span>
+                  </div>
+                )}
               </div>
 
-              <div className="flex items-center justify-between text-slate-400">
-                <span className="flex items-center gap-1">GST Tax (%):</span>
-                <div className="flex items-center space-x-1">
-                  <input
-                    type="number"
-                    min="0"
-                    max="28"
-                    value={taxRate}
-                    onChange={e => setTaxRate(Number(e.target.value))}
-                    className="w-14 px-1.5 py-0.5 bg-slate-900 border border-slate-800 rounded text-right text-white font-mono"
+              {/* Customer Info Form */}
+              <div className="bg-slate-950/80 p-4 rounded-2xl border border-slate-800 space-y-3">
+                <h4 className="text-xs font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <User className="w-3.5 h-3.5 text-amber-400" /> Customer Information
+                </h4>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-300 mb-1">Customer Full Name *</label>
+                    <input
+                      type="text"
+                      required
+                      value={custName}
+                      onChange={e => setCustName(e.target.value)}
+                      placeholder="e.g. Rajesh Kumar"
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700 focus:border-amber-500 rounded-xl text-xs text-white focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-300 mb-1">Mobile Phone Number *</label>
+                    <input
+                      type="tel"
+                      required
+                      value={custPhone}
+                      onChange={e => setCustPhone(e.target.value)}
+                      placeholder="e.g. 9876543210"
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700 focus:border-amber-500 rounded-xl text-xs text-white font-mono focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-300 mb-1">Delivery / Site Address</label>
+                  <textarea
+                    rows={2}
+                    value={custAddress}
+                    onChange={e => setCustAddress(e.target.value)}
+                    placeholder="Construction site address or village location..."
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 focus:border-amber-500 rounded-xl text-xs text-white focus:outline-none"
                   />
-                  <span>% (+₹{taxAmount.toLocaleString('en-IN')})</span>
                 </div>
               </div>
 
-              <div className="flex items-center justify-between text-slate-400">
-                <span>Discount (₹):</span>
-                <input
-                  type="number"
-                  min="0"
-                  value={discount}
-                  onChange={e => setDiscount(Number(e.target.value))}
-                  className="w-24 px-1.5 py-0.5 bg-slate-900 border border-slate-800 rounded text-right text-emerald-400 font-mono font-bold"
-                />
-              </div>
-
-              <div className="flex justify-between pt-2 border-t border-slate-800 text-base font-black text-amber-400 font-sans">
-                <span>Total Quoted Estimate:</span>
-                <span>₹{totalAmount.toLocaleString('en-IN')}</span>
-              </div>
-
-              <button
-                type="submit"
-                disabled={quoteItems.length === 0}
-                className="w-full mt-3 py-3 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-black text-sm uppercase tracking-wider rounded-xl transition shadow-lg shadow-amber-500/20 flex items-center justify-center space-x-2"
-              >
-                <FileCheck2 className="w-5 h-5" />
-                <span>Save & Generate Quotation</span>
-              </button>
-            </div>
-          </div>
-        </form>
-      </div>
-
-      {/* 2. SAVED QUOTATIONS SEARCH & HISTORY SUB-SECTION */}
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-7 shadow-2xl relative overflow-hidden">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 pb-4 border-b border-slate-800">
-          <div>
-            <h3 className="text-xl font-bold text-white flex items-center gap-2">
-              <Search className="w-5 h-5 text-amber-400" />
-              Search Saved Quotations & Estimates
-            </h3>
-            <p className="text-xs text-slate-400 mt-1">
-              Type customer name or phone number below to locate matching price estimates and print receipts.
-            </p>
-          </div>
-        </div>
-
-        {/* Search Bar */}
-        <div className="relative mb-4">
-          <Search className="w-5 h-5 text-slate-400 absolute left-4 top-3.5 pointer-events-none" />
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={e => setSearchTerm(e.target.value)}
-            placeholder="Type Customer Name (e.g. 'Rajesh') or 10-digit Phone Number to search..."
-            className="w-full pl-12 pr-10 py-3 bg-slate-950 border border-slate-800 rounded-2xl text-white text-sm font-mono placeholder-slate-500 focus:outline-none focus:border-amber-500 transition shadow-inner"
-          />
-          {searchTerm && (
-            <button
-              onClick={() => setSearchTerm('')}
-              className="absolute right-3.5 top-3 text-slate-400 hover:text-white p-1"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          )}
-        </div>
-
-        {/* Quotations Search Results (Only displayed when search query is entered) */}
-        {cleanSearch && filteredQuotations.length === 0 && (
-          <div className="bg-slate-950/50 border border-slate-800 rounded-2xl p-8 text-center text-xs text-slate-400">
-            No quotations found matching &quot;{searchTerm}&quot;.
-          </div>
-        )}
-
-        {cleanSearch && filteredQuotations.length > 0 && (
-          <div className="space-y-3">
-            <div className="text-xs font-mono text-slate-400 font-bold uppercase tracking-wider px-1">
-              Matching Quotations Found ({filteredQuotations.length}):
-            </div>
-
-            <div className="space-y-2.5">
-              {filteredQuotations.map(quote => {
-                const formattedDate = new Date(quote.createdAt).toLocaleDateString([], {
-                  month: 'short',
-                  day: 'numeric',
-                  year: 'numeric',
-                });
-
-                return (
-                  <div
-                    key={quote.id}
-                    className="bg-slate-950 border border-slate-800 hover:border-amber-500/40 rounded-2xl p-4 sm:p-5 transition-all shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-                  >
-                    <div className="flex items-start space-x-3.5">
-                      <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20 flex items-center justify-center font-bold shrink-0">
-                        <FileText className="w-5 h-5" />
-                      </div>
-
-                      <div>
-                        <div className="flex items-center space-x-2 flex-wrap">
-                          <span className="font-mono text-sm font-bold text-amber-400">{quote.id}</span>
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                            {quote.status}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center space-x-3 text-xs text-slate-300 mt-1 flex-wrap">
-                          <span className="flex items-center gap-1">
-                            <User className="w-3.5 h-3.5 text-slate-500" />
-                            <strong className="text-white">{quote.customerName}</strong>
-                          </span>
-                          <span>•</span>
-                          <span className="font-mono flex items-center gap-1 text-slate-400">
-                            <Phone className="w-3.5 h-3.5 text-slate-500" />
-                            {quote.customerPhone}
-                          </span>
-                          <span>•</span>
-                          <span className="text-slate-400 flex items-center gap-1">
-                            <Calendar className="w-3.5 h-3.5 text-slate-500" />
-                            {formattedDate}
-                          </span>
-                        </div>
-
-                        {quote.notes && (
-                          <p className="text-[11px] text-slate-400 mt-1 italic">
-                            &quot;{quote.notes}&quot;
-                          </p>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-between sm:justify-end space-x-4 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-900">
-                      <div className="text-left sm:text-right font-mono">
-                        <div className="text-base font-black text-amber-400">
-                          ₹{quote.totalAmount.toLocaleString('en-IN')}
-                        </div>
-                        <div className="text-[10px] text-slate-400">
-                          {quote.items.length} material item{quote.items.length !== 1 && 's'}
-                        </div>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => setViewingQuotation(quote)}
-                        className="px-3.5 py-2 bg-amber-500/20 hover:bg-amber-500 text-amber-300 hover:text-slate-950 border border-amber-500/30 font-bold text-xs rounded-xl transition flex items-center gap-1.5"
-                      >
-                        <Printer className="w-3.5 h-3.5" />
-                        <span>Print / View</span>
-                      </button>
-                    </div>
+              {/* Financials & Terms Settings */}
+              <div className="bg-slate-950/80 p-4 rounded-2xl border border-slate-800 space-y-3">
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-300 mb-1">GST Tax Rate %</label>
+                    <select
+                      value={taxRate}
+                      onChange={e => setTaxRate(Number(e.target.value))}
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700 focus:border-amber-500 rounded-xl text-xs text-white focus:outline-none"
+                    >
+                      <option value={18}>18% GST (Standard)</option>
+                      <option value={5}>5% GST (Reduced)</option>
+                      <option value={0}>0% (Exempt)</option>
+                    </select>
                   </div>
-                );
-              })}
-            </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-300 mb-1">Discount Amount ₹</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={discount}
+                      onChange={e => setDiscount(parseFloat(e.target.value) || 0)}
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700 focus:border-amber-500 rounded-xl text-xs text-white font-mono focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-300 mb-1">Estimate Validity</label>
+                    <select
+                      value={validDays}
+                      onChange={e => setValidDays(Number(e.target.value))}
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700 focus:border-amber-500 rounded-xl text-xs text-white focus:outline-none"
+                    >
+                      <option value={7}>7 Days</option>
+                      <option value={14}>14 Days</option>
+                      <option value={30}>30 Days</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-300 mb-1">Notes / Terms (Optional)</label>
+                  <input
+                    type="text"
+                    value={notes}
+                    onChange={e => setNotes(e.target.value)}
+                    placeholder="e.g. Free delivery on orders above ₹50,000"
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 focus:border-amber-500 rounded-xl text-xs text-white focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* Price Calculation Summary */}
+              <div className="bg-amber-950/20 border border-amber-500/30 rounded-2xl p-4 space-y-1.5 font-mono text-xs text-right">
+                <div className="flex justify-between text-slate-300">
+                  <span>Subtotal:</span>
+                  <span>₹{subtotal.toLocaleString()}</span>
+                </div>
+                {taxAmount > 0 && (
+                  <div className="flex justify-between text-slate-400">
+                    <span>GST ({taxRate}%):</span>
+                    <span>+₹{taxAmount.toLocaleString()}</span>
+                  </div>
+                )}
+                {discount > 0 && (
+                  <div className="flex justify-between text-emerald-400 font-semibold">
+                    <span>Discount:</span>
+                    <span>-₹{discount.toLocaleString()}</span>
+                  </div>
+                )}
+                <div className="flex justify-between pt-2 border-t border-slate-800 text-sm font-black text-white font-sans">
+                  <span>Grand Total Estimate:</span>
+                  <span className="text-amber-400 text-base">₹{grandTotal.toLocaleString()}</span>
+                </div>
+              </div>
+
+              {/* Action Button */}
+              <div className="pt-2">
+                <button
+                  type="submit"
+                  disabled={validQuoteItems.length === 0}
+                  className="w-full py-3.5 px-4 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 disabled:opacity-50 text-slate-950 font-black rounded-2xl text-sm shadow-xl shadow-amber-500/20 flex items-center justify-center space-x-2 transition cursor-pointer"
+                >
+                  <Printer className="w-4 h-4 stroke-[2.5]" />
+                  <span>Generate & Print Quotation</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* RECENT SAVED QUOTATIONS DIRECTORY */}
+      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-7 shadow-2xl space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
+          <div>
+            <h3 className="text-lg font-bold text-white flex items-center gap-2">
+              <FileText className="w-5 h-5 text-amber-400" /> Recent Customer Quotations ({quotations.length})
+            </h3>
+            <p className="text-xs text-slate-400">Search past price estimates and print duplicate copies</p>
+          </div>
+
+          <div className="relative w-full sm:w-72">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              value={quotationSearchTerm}
+              onChange={e => setQuotationSearchTerm(e.target.value)}
+              placeholder="Search by customer name or phone..."
+              className="w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-800 focus:border-amber-500 rounded-xl text-xs text-white focus:outline-none"
+            />
+          </div>
+        </div>
+
+        {filteredQuotations.length === 0 ? (
+          <div className="py-8 text-center text-slate-500 border border-dashed border-slate-800 rounded-2xl text-xs">
+            No quotations found matching "{quotationSearchTerm}".
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-950 text-slate-400 font-mono text-[11px] uppercase border-b border-slate-800">
+                <tr>
+                  <th className="px-4 py-3">Quote ID</th>
+                  <th className="px-4 py-3">Customer Details</th>
+                  <th className="px-4 py-3 text-center">Items</th>
+                  <th className="px-4 py-3 text-right">Estimate Total</th>
+                  <th className="px-4 py-3 text-center">Status</th>
+                  <th className="px-4 py-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/80 font-mono text-slate-300">
+                {filteredQuotations.map(q => (
+                  <tr key={q.id} className="hover:bg-slate-950/60 transition">
+                    <td className="px-4 py-3 font-bold text-amber-400">{q.id}</td>
+                    <td className="px-4 py-3 font-sans">
+                      <div className="font-bold text-white text-xs">{q.customerName}</div>
+                      <div className="text-[11px] text-slate-400 font-mono">{q.customerPhone}</div>
+                    </td>
+                    <td className="px-4 py-3 text-center font-bold">{q.items.length} items</td>
+                    <td className="px-4 py-3 text-right font-black text-white">
+                      ₹{q.totalAmount.toLocaleString()}
+                    </td>
+                    <td className="px-4 py-3 text-center font-sans">
+                      <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-500/15 border border-amber-500/30 text-amber-300">
+                        {q.status}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right font-sans">
+                      <button
+                        onClick={() => setViewingQuotation(q)}
+                        className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl text-xs transition flex items-center gap-1.5 ml-auto"
+                      >
+                        <Printer className="w-3.5 h-3.5 text-amber-400" /> Print
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
 
-      {/* Printable Quotation Modal */}
+      {/* PRINTABLE QUOTATION ESTIMATE MODAL */}
       <QuotationModal quotation={viewingQuotation} onClose={() => setViewingQuotation(null)} />
     </div>
   );
