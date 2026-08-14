@@ -96,13 +96,57 @@ const LOCAL_STORAGE_PREFIX = 'gol_building_materials_v9_';
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [activeRole, setActiveRole] = useState<UserRole>('shopkeeper');
-  const [products, setProducts] = useState<Product[]>(initialProducts);
-  const [customers, setCustomers] = useState<Customer[]>(initialCustomers);
-  const [invoices, setInvoices] = useState<Invoice[]>(initialInvoices);
-  const [quotations, setQuotations] = useState<Quotation[]>(initialQuotations);
+  // Lazy state initialization from localStorage (hydration safe & zero race condition)
+  const [products, setProducts] = useState<Product[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem(LOCAL_STORAGE_PREFIX + 'products');
+        if (saved) return JSON.parse(saved);
+      } catch (e) {}
+    }
+    return initialProducts;
+  });
+
+  const [customers, setCustomers] = useState<Customer[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem(LOCAL_STORAGE_PREFIX + 'customers');
+        if (saved) return JSON.parse(saved);
+      } catch (e) {}
+    }
+    return initialCustomers;
+  });
+
+  const [invoices, setInvoices] = useState<Invoice[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem(LOCAL_STORAGE_PREFIX + 'invoices');
+        if (saved) return JSON.parse(saved);
+      } catch (e) {}
+    }
+    return initialInvoices;
+  });
+
+  const [quotations, setQuotations] = useState<Quotation[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem(LOCAL_STORAGE_PREFIX + 'quotations');
+        if (saved) return JSON.parse(saved);
+      } catch (e) {}
+    }
+    return initialQuotations;
+  });
 
   // Theme State
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem(LOCAL_STORAGE_PREFIX + 'theme') as 'dark' | 'light' | null;
+        if (saved === 'light' || saved === 'dark') return saved;
+      } catch (e) {}
+    }
+    return 'dark';
+  });
 
   // Billing Flow States
   const [phoneSearchTerm, setPhoneSearchTerm] = useState<string>('');
@@ -114,35 +158,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [cart, setCart] = useState<CartItem[]>([]);
   const [lastGeneratedInvoice, setLastGeneratedInvoice] = useState<Invoice | null>(null);
 
-  // Hydration safety flag
-  const isHydratedRef = React.useRef(false);
-
-  // Load from localStorage on mount (hydration safe)
+  // Save changes to localStorage & document element
   useEffect(() => {
-    try {
-      const savedProducts = localStorage.getItem(LOCAL_STORAGE_PREFIX + 'products');
-      const savedCustomers = localStorage.getItem(LOCAL_STORAGE_PREFIX + 'customers');
-      const savedInvoices = localStorage.getItem(LOCAL_STORAGE_PREFIX + 'invoices');
-      const savedQuotations = localStorage.getItem(LOCAL_STORAGE_PREFIX + 'quotations');
-      const savedTheme = localStorage.getItem(LOCAL_STORAGE_PREFIX + 'theme') as 'dark' | 'light' | null;
-
-      if (savedProducts) setProducts(JSON.parse(savedProducts));
-      if (savedCustomers) setCustomers(JSON.parse(savedCustomers));
-      if (savedInvoices) setInvoices(JSON.parse(savedInvoices));
-      if (savedQuotations) setQuotations(JSON.parse(savedQuotations));
-      if (savedTheme === 'light' || savedTheme === 'dark') {
-        setTheme(savedTheme);
-      }
-    } catch (e) {
-      console.warn('LocalStorage unavailable:', e);
-    } finally {
-      isHydratedRef.current = true;
-    }
-  }, []);
-
-  // Save changes to localStorage & document element (only after hydration)
-  useEffect(() => {
-    if (!isHydratedRef.current) return;
     try {
       const pStr = JSON.stringify(products);
       if (localStorage.getItem(LOCAL_STORAGE_PREFIX + 'products') !== pStr) {
