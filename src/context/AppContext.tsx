@@ -144,10 +144,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     if (!isHydratedRef.current) return;
     try {
-      localStorage.setItem(LOCAL_STORAGE_PREFIX + 'products', JSON.stringify(products));
-      localStorage.setItem(LOCAL_STORAGE_PREFIX + 'customers', JSON.stringify(customers));
-      localStorage.setItem(LOCAL_STORAGE_PREFIX + 'invoices', JSON.stringify(invoices));
-      localStorage.setItem(LOCAL_STORAGE_PREFIX + 'quotations', JSON.stringify(quotations));
+      const pStr = JSON.stringify(products);
+      if (localStorage.getItem(LOCAL_STORAGE_PREFIX + 'products') !== pStr) {
+        localStorage.setItem(LOCAL_STORAGE_PREFIX + 'products', pStr);
+      }
+      const cStr = JSON.stringify(customers);
+      if (localStorage.getItem(LOCAL_STORAGE_PREFIX + 'customers') !== cStr) {
+        localStorage.setItem(LOCAL_STORAGE_PREFIX + 'customers', cStr);
+      }
+      const iStr = JSON.stringify(invoices);
+      if (localStorage.getItem(LOCAL_STORAGE_PREFIX + 'invoices') !== iStr) {
+        localStorage.setItem(LOCAL_STORAGE_PREFIX + 'invoices', iStr);
+      }
+      const qStr = JSON.stringify(quotations);
+      if (localStorage.getItem(LOCAL_STORAGE_PREFIX + 'quotations') !== qStr) {
+        localStorage.setItem(LOCAL_STORAGE_PREFIX + 'quotations', qStr);
+      }
       localStorage.setItem(LOCAL_STORAGE_PREFIX + 'theme', theme);
       if (theme === 'light') {
         document.documentElement.classList.add('light-mode');
@@ -166,26 +178,44 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         try {
           const parsed = JSON.parse(e.newValue);
           if (Array.isArray(parsed)) {
-            setProducts(parsed);
+            setProducts(prev => {
+              if (JSON.stringify(prev) === e.newValue) return prev;
+              return parsed;
+            });
           }
         } catch (err) {}
       }
       if (e.key === LOCAL_STORAGE_PREFIX + 'customers' && e.newValue) {
         try {
           const parsed = JSON.parse(e.newValue);
-          if (Array.isArray(parsed)) setCustomers(parsed);
+          if (Array.isArray(parsed)) {
+            setCustomers(prev => {
+              if (JSON.stringify(prev) === e.newValue) return prev;
+              return parsed;
+            });
+          }
         } catch (err) {}
       }
       if (e.key === LOCAL_STORAGE_PREFIX + 'invoices' && e.newValue) {
         try {
           const parsed = JSON.parse(e.newValue);
-          if (Array.isArray(parsed)) setInvoices(parsed);
+          if (Array.isArray(parsed)) {
+            setInvoices(prev => {
+              if (JSON.stringify(prev) === e.newValue) return prev;
+              return parsed;
+            });
+          }
         } catch (err) {}
       }
       if (e.key === LOCAL_STORAGE_PREFIX + 'quotations' && e.newValue) {
         try {
           const parsed = JSON.parse(e.newValue);
-          if (Array.isArray(parsed)) setQuotations(parsed);
+          if (Array.isArray(parsed)) {
+            setQuotations(prev => {
+              if (JSON.stringify(prev) === e.newValue) return prev;
+              return parsed;
+            });
+          }
         } catch (err) {}
       }
     };
