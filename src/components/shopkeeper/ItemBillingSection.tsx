@@ -35,6 +35,25 @@ interface ItemBillingSectionProps {
   setIsCartModalOpen?: (open: boolean) => void;
 }
 
+// ── Frequency map cache (localStorage) ──────────────────────────────────────────
+const FREQ_CACHE_KEY = 'gol_building_materials_v9_freq_cache';
+
+function loadCachedFreqMap(): Record<string, number> {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = localStorage.getItem(FREQ_CACHE_KEY);
+    return raw ? (JSON.parse(raw) as Record<string, number>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveFreqCache(map: Record<string, number>) {
+  try {
+    localStorage.setItem(FREQ_CACHE_KEY, JSON.stringify(map));
+  } catch {}
+}
+
 export const ItemBillingSection: React.FC<ItemBillingSectionProps> = ({
   onInvoiceGenerated,
   searchTerm: propSearchTerm,
@@ -44,6 +63,7 @@ export const ItemBillingSection: React.FC<ItemBillingSectionProps> = ({
 }) => {
   const {
     products,
+    invoices,
     cart,
     addToCart,
     updateCartQuantity,
@@ -114,10 +134,42 @@ export const ItemBillingSection: React.FC<ItemBillingSectionProps> = ({
     return ['All', ...Array.from(set)];
   }, [products]);
 
-  // Filter products safely by Main Category, Sub-Category, or Search
+  // ── Frequency map ───────────────────────────────────────────────────────────────
+  // Seed from localStorage so sort order is correct on the very first render.
+  // When invoices arrive from Supabase, we recompute and re-save the cache.
+  // Must use useEffect (not useState initializer) to avoid SSR hydration mismatch.
+  const [cachedFreqMap, setCachedFreqMap] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    const loaded = loadCachedFreqMap();
+    if (Object.keys(loaded).length > 0) setCachedFreqMap(loaded);
+  }, []);
+
+  const frequencyMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    invoices.forEach(inv => {
+      if (inv.isSettlementReceipt) return;
+      inv.items.forEach(item => {
+        const id = item.product.id;
+        map[id] = (map[id] || 0) + item.quantity;
+      });
+    });
+    return map;
+  }, [invoices]);
+
+  // Persist updated frequency map whenever invoices change
+  useEffect(() => {
+    if (invoices.length > 0) saveFreqCache(frequencyMap);
+  }, [frequencyMap, invoices.length]);
+
+  // Use the live computed map once invoices have loaded; fall back to cache
+  // until then so the initial sort order is already correct.
+  const effectiveFreqMap = invoices.length > 0 ? frequencyMap : cachedFreqMap;
+
+  // Filter products and sort by total units sold (highest first).
   const filteredProducts = useMemo(() => {
     const searchLower = (searchTerm || '').toLowerCase().trim();
-    return products.filter(product => {
+    const filtered = products.filter(product => {
       if (!product) return false;
       const matchesCategory =
         selectedCategory === 'All' ||
@@ -131,7 +183,14 @@ export const ItemBillingSection: React.FC<ItemBillingSectionProps> = ({
         (product.subCategory && product.subCategory.toLowerCase().includes(searchLower));
       return matchesCategory && matchesSearch;
     });
-  }, [products, selectedCategory, searchTerm]);
+    // Sort descending by units sold — most popular always at the top
+    return [...filtered].sort(
+      (a, b) => (effectiveFreqMap[b.id] || 0) - (effectiveFreqMap[a.id] || 0)
+    );
+  }, [products, selectedCategory, searchTerm, effectiveFreqMap]);
+
+  // ── Loading state: products haven't arrived from Supabase yet ──
+  const isLoading = products.length === 0;
 
   // Totals calculation
   const totalCartItemsCount = cart.reduce((sum, item) => sum + item.quantity, 0);
@@ -207,11 +266,28 @@ export const ItemBillingSection: React.FC<ItemBillingSectionProps> = ({
           ))}
         </div>
 
-        {/* Full-Width Products Grid (5 Items Per Row Layout) */}
+        {/* Full-Width Products Grid (5 Items Per Row Layout) with Lazy Loading */}
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-5 2xl:grid-cols-5 gap-2.5 sm:gap-3.5 overflow-y-auto max-h-[640px] pr-1">
-          {filteredProducts.length === 0 ? (
+
+          {/* ── Skeleton shimmer while Supabase is still loading ── */}
+          {isLoading ? (
+            Array.from({ length: 10 }).map((_, i) => (
+              <div
+                key={`skel-${i}`}
+                className="p-3 rounded-2xl border border-slate-800/60 bg-slate-950/60 flex flex-col animate-pulse"
+              >
+                <div className="w-full h-28 sm:h-32 rounded-xl bg-slate-800/60 mb-3" />
+                <div className="h-3 bg-slate-800/60 rounded-full w-3/4 mb-2" />
+                <div className="h-3 bg-slate-800/40 rounded-full w-1/2 mb-4" />
+                <div className="flex justify-between items-center pt-2 border-t border-slate-800/40">
+                  <div className="h-4 bg-slate-800/60 rounded-full w-16" />
+                  <div className="h-7 bg-slate-800/60 rounded-xl w-14" />
+                </div>
+              </div>
+            ))
+          ) : filteredProducts.length === 0 ? (
             <div className="col-span-full py-16 text-center text-slate-500 text-xs">
-              No products matching "{searchTerm}"
+              No products matching &quot;{searchTerm}&quot;
             </div>
           ) : (
             filteredProducts.map((product: Product) => {
@@ -222,23 +298,26 @@ export const ItemBillingSection: React.FC<ItemBillingSectionProps> = ({
               return (
                 <div
                   key={product.id}
-                  className={`p-3 rounded-2xl border transition-all duration-300 flex flex-col justify-between group ${isOutOfStock
-                    ? 'bg-slate-950/40 border-slate-850 opacity-60'
-                    : cartItem
+                  className={`p-3 rounded-2xl border transition-all duration-300 flex flex-col justify-between group ${
+                    isOutOfStock
+                      ? 'bg-slate-950/40 border-slate-850 opacity-60'
+                      : cartItem
                       ? 'bg-slate-950 border-emerald-500/60 shadow-lg shadow-emerald-500/10'
                       : 'bg-slate-950 border-slate-800/90 hover:border-emerald-500/40 hover:shadow-xl'
-                    }`}
+                  }`}
                 >
                   {/* Top 50-60%: Product Image / Emoji Container */}
                   <div className="relative w-full h-28 sm:h-32 rounded-xl bg-slate-900/90 border border-slate-800/80 flex items-center justify-center overflow-hidden p-2.5 group-hover:border-slate-700 transition">
+
                     {/* Stock Badge Overlay Top Right */}
                     <span
-                      className={`absolute top-2 right-2 text-[10px] font-mono px-2 py-0.5 rounded-md font-bold z-10 ${isOutOfStock
-                        ? 'bg-red-500/20 text-red-400 border border-red-500/30'
-                        : isLowStock
+                      className={`absolute top-2 right-2 text-[10px] font-mono px-2 py-0.5 rounded-md font-bold z-10 ${
+                        isOutOfStock
+                          ? 'bg-red-500/20 text-red-400 border border-red-500/30'
+                          : isLowStock
                           ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold'
                           : 'bg-slate-950/90 text-emerald-400 border border-emerald-500/30'
-                        }`}
+                      }`}
                     >
                       {isOutOfStock ? 'Out of Stock' : product.stock > 1000 ? '1000+ left' : `${product.stock} left`}
                     </span>

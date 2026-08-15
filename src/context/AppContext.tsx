@@ -254,10 +254,36 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 const LOCAL_STORAGE_PREFIX = 'gol_building_materials_v9_';
+const PRODUCTS_CACHE_KEY = `${LOCAL_STORAGE_PREFIX}products_cache`;
+const PRODUCTS_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
+
+/** Read products from localStorage cache synchronously (runs before any useEffect). */
+function loadCachedProducts(): Product[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(PRODUCTS_CACHE_KEY);
+    if (!raw) return [];
+    const { ts, data } = JSON.parse(raw) as { ts: number; data: Product[] };
+    if (Date.now() - ts > PRODUCTS_CACHE_TTL_MS) return []; // stale
+    return Array.isArray(data) ? data : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveProductsCache(products: Product[]) {
+  try {
+    localStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify({ ts: Date.now(), data: products }));
+  } catch {
+    // localStorage may be unavailable (private browsing quota)
+  }
+}
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [activeRole, setActiveRole] = useState<UserRole>('shopkeeper');
   const [isMounted, setIsMounted] = useState<boolean>(false);
+  // Start with empty array (same on server + client) to avoid hydration mismatch.
+  // The localStorage cache is applied in a useEffect below (client-only).
   const [products, setProducts] = useState<Product[]>(initialProducts);
   const [customers, setCustomers] = useState<Customer[]>(initialCustomers);
   const [invoices, setInvoices] = useState<Invoice[]>(initialInvoices);
@@ -274,9 +300,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [cart, setCart] = useState<CartItem[]>([]);
   const [lastGeneratedInvoice, setLastGeneratedInvoice] = useState<Invoice | null>(null);
 
-  // Client mount effect
+  // Client mount effect — runs only on the client after hydration succeeds.
+  // Load the localStorage product cache here so SSR and initial client render
+  // both start with [] (no hydration mismatch), then immediately populate from cache.
   useEffect(() => {
     setIsMounted(true);
+    const cached = loadCachedProducts();
+    if (cached.length > 0) setProducts(cached);
   }, []);
 
   // Supabase Cloud PostgreSQL Real-time Synchronization (when configured)
@@ -284,57 +314,75 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!isSupabaseConfigured || !supabase) return;
     const sb = supabase;
 
-    // 1. Initial Fetch for all tables
-    sb.from('products').select('*').order('created_at', { ascending: false }).then(({ data, error }) => {
-      if (data && !error && data.length > 0) setProducts(data.map(mapDbProduct));
-    });
+    // ── Step 1: Fetch PRODUCTS first, independently ──────────────────────────
+    // Cached products are already in state (instant). Fetch from DB in the
+    // background, update state + cache only if the data actually changed.
+    sb.from('products')
+      .select('id,name,category,sub_category,price,cost_price,stock,sku,unit,image_emoji,image_url,created_at')
+      .order('created_at', { ascending: false })
+      .then(({ data, error }) => {
+        if (data && !error && data.length > 0) {
+          const mapped = data.map(mapDbProduct);
+          setProducts(mapped);
+          saveProductsCache(mapped); // keep cache warm for next visit
+        }
+      });
 
-    sb.from('customers').select('*').order('created_at', { ascending: false }).then(({ data, error }) => {
-      if (data && !error && data.length > 0) setCustomers(data.map(mapDbCustomer));
-    });
+    // ── Step 2: Fetch remaining tables in parallel, AFTER products kick off ──
+    // Invoices: only fetch columns needed for display + frequency computation.
+    // Omitting heavy unused columns cuts payload significantly.
+    sb.from('customers')
+      .select('id,phone,name,address,registered_at,total_purchases,total_spent,total_due')
+      .order('created_at', { ascending: false })
+      .then(({ data, error }) => {
+        if (data && !error && data.length > 0) setCustomers(data.map(mapDbCustomer));
+      });
 
-    sb.from('invoices').select('*').order('created_at', { ascending: false }).then(({ data, error }) => {
-      if (data && !error && data.length > 0) setInvoices(data.map(mapDbInvoice));
-    });
+    sb.from('invoices')
+      .select('id,customer_phone,customer_name,customer_address,customer_gstin,items,subtotal,tax_rate,tax_amount,cgst_amount,sgst_amount,discount,total_amount,amount_paid,due_amount,payment_method,payment_status,is_settlement_receipt,is_gst_invoice,previous_due,status,created_at')
+      .order('created_at', { ascending: false })
+      .then(({ data, error }) => {
+        if (data && !error && data.length > 0) setInvoices(data.map(mapDbInvoice));
+      });
 
-    sb.from('quotations').select('*').order('created_at', { ascending: false }).then(({ data, error }) => {
-      if (data && !error && data.length > 0) setQuotations(data.map(mapDbQuotation));
-    });
+    sb.from('quotations')
+      .select('id,customer_name,customer_phone,customer_address,notes,items,subtotal,tax_rate,tax_amount,discount,total_amount,created_at,valid_until,status,is_targeted,owner_call_log')
+      .order('created_at', { ascending: false })
+      .then(({ data, error }) => {
+        if (data && !error && data.length > 0) setQuotations(data.map(mapDbQuotation));
+      });
 
-    // 2. Real-time Subscription for all tables
+    // ── Step 3: Real-time subscriptions ──────────────────────────────────────
+    // Products: patch the changed row in-place — no full table refetch.
+    // Others: prepend new rows / update existing rows individually.
     const channel = sb
       .channel('public:db-changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, () => {
-        sb.from('products').select('*').order('created_at', { ascending: false }).then(({ data }) => {
-          if (data) {
-            const mapped = data.map(mapDbProduct);
-            setProducts(prev => (JSON.stringify(prev) === JSON.stringify(mapped) ? prev : mapped));
-          }
-        });
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'products' }, ({ new: row }) => {
+        if (row) setProducts(prev => [mapDbProduct(row), ...prev]);
       })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, () => {
-        sb.from('customers').select('*').order('created_at', { ascending: false }).then(({ data }) => {
-          if (data) {
-            const mapped = data.map(mapDbCustomer);
-            setCustomers(prev => (JSON.stringify(prev) === JSON.stringify(mapped) ? prev : mapped));
-          }
-        });
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'products' }, ({ new: row }) => {
+        if (row) setProducts(prev => prev.map(p => p.id === row.id ? mapDbProduct(row) : p));
       })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'invoices' }, () => {
-        sb.from('invoices').select('*').order('created_at', { ascending: false }).then(({ data }) => {
-          if (data) {
-            const mapped = data.map(mapDbInvoice);
-            setInvoices(prev => (JSON.stringify(prev) === JSON.stringify(mapped) ? prev : mapped));
-          }
-        });
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'products' }, ({ old: row }) => {
+        if (row) setProducts(prev => prev.filter(p => p.id !== row.id));
       })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'quotations' }, () => {
-        sb.from('quotations').select('*').order('created_at', { ascending: false }).then(({ data }) => {
-          if (data) {
-            const mapped = data.map(mapDbQuotation);
-            setQuotations(prev => (JSON.stringify(prev) === JSON.stringify(mapped) ? prev : mapped));
-          }
-        });
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'customers' }, ({ new: row }) => {
+        if (row) setCustomers(prev => [mapDbCustomer(row), ...prev]);
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'customers' }, ({ new: row }) => {
+        if (row) setCustomers(prev => prev.map(c => c.id === row.id ? mapDbCustomer(row) : c));
+      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'invoices' }, ({ new: row }) => {
+        if (row) setInvoices(prev => [mapDbInvoice(row), ...prev]);
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'invoices' }, ({ new: row }) => {
+        if (row) setInvoices(prev => prev.map(inv => inv.id === row.id ? mapDbInvoice(row) : inv));
+      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'quotations' }, ({ new: row }) => {
+        if (row) setQuotations(prev => [mapDbQuotation(row), ...prev]);
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'quotations' }, ({ new: row }) => {
+        if (row) setQuotations(prev => prev.map(q => q.id === row.id ? mapDbQuotation(row) : q));
       })
       .subscribe();
 
