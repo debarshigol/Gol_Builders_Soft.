@@ -451,8 +451,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Customer Registration Logic
   const registerCustomer = (phone: string, name: string, address: string): Customer => {
     const cleanPhone = phone.trim().replace(/\D/g, '');
+    const tempId = `c-${Date.now()}`; // temporary local id until Supabase responds
     const newCustomer: Customer = {
-      id: `c-${Date.now()}`,
+      id: tempId,
       phone: cleanPhone,
       name: name.trim(),
       address: address.trim(),
@@ -468,9 +469,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setSearchAttempted(true);
 
     if (isSupabaseConfigured && supabase) {
-      supabase.from('customers').upsert(mapCustomerToDb(newCustomer)).then(({ error }) => {
-        if (error) console.error('Supabase register customer error:', error);
-      });
+      // Omit the local temp id — let Supabase generate the real UUID
+      const { id: _localId, ...customerWithoutId } = mapCustomerToDb(newCustomer);
+      supabase
+        .from('customers')
+        .insert(customerWithoutId)
+        .select('id')
+        .single()
+        .then(({ data, error }) => {
+          if (error) {
+            console.error('Supabase register customer error:', error);
+          } else if (data?.id) {
+            // Patch local state with the real UUID so future upserts work correctly
+            const realId = data.id;
+            setCustomers(prev => prev.map(c => c.id === tempId ? { ...c, id: realId } : c));
+            setActiveCustomer(prev => prev?.id === tempId ? { ...prev, id: realId } : prev);
+            saveCache(CUSTOMERS_CACHE_KEY, []);  // invalidate customer cache so next load re-fetches
+          }
+        });
     }
 
     return newCustomer;
@@ -565,17 +581,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       status: 'Completed',
     };
 
-    setInvoices(prev => [newInvoice, ...prev]);
+    setInvoices(prev => {
+      const updated = [newInvoice, ...prev];
+      saveCache(INVOICES_CACHE_KEY, updated);
+      return updated;
+    });
 
-    setProducts(prevProducts =>
-      prevProducts.map(p => {
+    setProducts(prevProducts => {
+      const updated = prevProducts.map(p => {
         const cartItem = validItems.find(c => c.product.id === p.id);
         if (cartItem) {
           return { ...p, stock: Math.max(0, p.stock - cartItem.quantity) };
         }
         return p;
-      })
-    );
+      });
+      saveCache(PRODUCTS_CACHE_KEY, updated);
+      return updated;
+    });
 
     // Compute updated customer stats from the LATEST row in state (not from the
     // potentially-stale targetCust snapshot) to avoid double-counting across
@@ -590,6 +612,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setCustomers(prevCustomers => {
       const targetPhone = targetCust.phone.replace(/\D/g, '');
       const existing = prevCustomers.find(c => c.phone.replace(/\D/g, '') === targetPhone);
+      let updatedList: Customer[];
       if (existing) {
         // Always derive from the freshest row in state
         updatedCustomerState = {
@@ -598,12 +621,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           totalSpent: Number(((existing.totalSpent || 0) + totalAmount).toFixed(2)),
           totalDue: Number(((existing.totalDue || 0) + dueAmount).toFixed(2)),
         };
-        return prevCustomers.map(c =>
+        updatedList = prevCustomers.map(c =>
           c.phone.replace(/\D/g, '') === targetPhone ? updatedCustomerState : c
         );
       } else {
-        return [updatedCustomerState, ...prevCustomers];
+        updatedList = [updatedCustomerState, ...prevCustomers];
       }
+      saveCache(CUSTOMERS_CACHE_KEY, updatedList);
+      return updatedList;
     });
 
     setActiveCustomer(updatedCustomerState);
@@ -653,7 +678,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const previousDue = cust.totalDue || 0;
     const actualPaid = Math.min(previousDue, Math.max(0, settlementAmount));
     // newRemainingDue is the CUSTOMER's outstanding balance after this payment.
-    // It belongs in the customers table, NOT as the invoice's dueAmount.
     const newRemainingDue = Math.max(0, Number((previousDue - actualPaid).toFixed(2)));
 
     const settlementItem: CartItem = {
@@ -681,14 +705,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       taxRate: 0,
       taxAmount: 0,
       discount: 0,
-      // totalAmount for settlement = the amount being cleared
+      // totalAmount for settlement = the amount being cleared in this payment
       totalAmount: actualPaid,
       amountPaid: actualPaid,
-      // dueAmount on THIS invoice = 0 — the settlement transaction itself is fully paid.
-      // The customer's remaining balance (newRemainingDue) is tracked in customers.total_due.
-      dueAmount: 0,
+      // dueAmount = remaining balance due after this payment
+      dueAmount: newRemainingDue,
       paymentMethod,
-      paymentStatus: 'Paid',
+      paymentStatus: newRemainingDue <= 0 ? 'Paid' : 'Partial',
       isSettlementReceipt: true,
       // previousDue records the customer's balance BEFORE this payment (for receipt display)
       previousDue,
@@ -704,13 +727,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       totalSpent: cust.totalSpent,
     };
 
-    setInvoices(prev => [newInvoice, ...prev]);
+    setInvoices(prev => {
+      const updated = [newInvoice, ...prev];
+      saveCache(INVOICES_CACHE_KEY, updated);
+      return updated;
+    });
 
-    setCustomers(prevCustomers =>
-      prevCustomers.map(c =>
+    setCustomers(prevCustomers => {
+      const updated = prevCustomers.map(c =>
         c.phone.replace(/\D/g, '') === cust.phone.replace(/\D/g, '') ? updatedCustState : c
-      )
-    );
+      );
+      saveCache(CUSTOMERS_CACHE_KEY, updated);
+      return updated;
+    });
 
     if (activeCustomer && activeCustomer.phone.replace(/\D/g, '') === cust.phone.replace(/\D/g, '')) {
       setActiveCustomer(updatedCustState);
@@ -721,7 +750,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Sync to Supabase Cloud PostgreSQL
     if (isSupabaseConfigured && supabase) {
       const sb = supabase;
-      // invoice.due_amount = 0 (settlement itself is paid in full)
+      // invoice.due_amount = remaining balance after payment (for accurate receipt and history queries)
       // invoice.previous_due = customer's balance before this payment
       sb.from('invoices').insert(mapInvoiceToDb(newInvoice)).then(({ error }) => {
         if (error) console.error('Supabase settlement invoice error:', error);
@@ -807,7 +836,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       isGstInvoice: true,
     };
 
-    setInvoices(prev => [newInvoice, ...prev]);
+    setInvoices(prev => {
+      const updated = [newInvoice, ...prev];
+      saveCache(INVOICES_CACHE_KEY, updated);
+      return updated;
+    });
 
     // Build the updated customer record synchronously so we can upsert it to
     // Supabase reliably (setCustomers is async; reading targetCust from inside
@@ -836,6 +869,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setCustomers(prevCustomers => {
       const idx = prevCustomers.findIndex(c => c.phone === data.customerPhone);
+      let next: Customer[];
       if (idx !== -1) {
         // Recompute from the freshest row to avoid stale-snapshot accumulation
         const fresh = prevCustomers[idx];
@@ -845,12 +879,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           totalSpent: Number(((fresh.totalSpent || 0) + totalAmount).toFixed(2)),
           totalDue: Number(((fresh.totalDue || 0) + dueAmount).toFixed(2)),
         };
-        const next = [...prevCustomers];
+        next = [...prevCustomers];
         next[idx] = freshUpdated;
-        return next;
       } else {
-        return [finalCustState, ...prevCustomers];
+        next = [finalCustState, ...prevCustomers];
       }
+      saveCache(CUSTOMERS_CACHE_KEY, next);
+      return next;
     });
 
     setLastGeneratedInvoice(newInvoice);
