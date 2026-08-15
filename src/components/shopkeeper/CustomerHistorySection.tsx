@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { useApp } from '@/context/AppContext';
-import { Invoice } from '@/types';
+import { Invoice, PaymentMethod } from '@/types';
 import {
   Search,
   User,
@@ -24,9 +24,20 @@ interface CustomerHistorySectionProps {
 }
 
 export const CustomerHistorySection: React.FC<CustomerHistorySectionProps> = ({ onViewInvoice }) => {
-  const { invoices, customers, activeCustomer } = useApp();
+  const { invoices, customers, activeCustomer, payCustomerDue } = useApp();
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'due' | 'today'>('all');
+
+  // Credit Due Settlement Modal State
+  const [dueModalCustomer, setDueModalCustomer] = useState<{
+    id: string;
+    name: string;
+    phone: string;
+    totalDue: number;
+  } | null>(null);
+  const [settlementAmount, setSettlementAmount] = useState<string>('');
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('UPI');
+  const [settlementError, setSettlementError] = useState<string>('');
 
   // Clean search input
   const cleanSearch = searchTerm.trim().toLowerCase();
@@ -77,23 +88,83 @@ export const CustomerHistorySection: React.FC<CustomerHistorySectionProps> = ({ 
     });
   }, [invoices, effectiveSearch, filterStatus, isSearchActive]);
 
-  // Aggregate metrics for currently filtered search results
-  const summaryMetrics = useMemo(() => {
-    const totalSpent = filteredInvoices.reduce((acc, inv) => acc + inv.totalAmount, 0);
+  // Find matching customer object for searched invoices
+  const matchedCustomer = useMemo(() => {
+    if (!filteredInvoices.length) return null;
+    const phone = filteredInvoices[0].customerPhone;
+    const found = customers.find(c => c.phone.replace(/\D/g, '') === phone.replace(/\D/g, ''));
+    if (found) return found;
+
+    const salesInvoices = filteredInvoices.filter(inv => !inv.isSettlementReceipt);
+    const totalSpent = salesInvoices.reduce((acc, inv) => acc + inv.totalAmount, 0);
     const totalPaid = filteredInvoices.reduce((acc, inv) => acc + inv.amountPaid, 0);
-    const totalDue = filteredInvoices.reduce((acc, inv) => acc + inv.dueAmount, 0);
+    const calculatedDue = Math.max(0, totalSpent - totalPaid);
 
     return {
-      count: filteredInvoices.length,
+      id: `c-${phone}`,
+      name: filteredInvoices[0].customerName,
+      phone: phone,
+      address: filteredInvoices[0].customerAddress || 'N/A',
+      registeredAt: new Date().toISOString().split('T')[0],
+      totalPurchases: salesInvoices.length,
+      totalSpent,
+      totalDue: calculatedDue,
+    };
+  }, [filteredInvoices, customers]);
+
+  // Aggregate metrics for currently filtered search results
+  const summaryMetrics = useMemo(() => {
+    const salesInvoices = filteredInvoices.filter(inv => !inv.isSettlementReceipt);
+    const count = salesInvoices.length;
+    const totalSpent = salesInvoices.reduce((acc, inv) => acc + inv.totalAmount, 0);
+    const totalPaid = filteredInvoices.reduce((acc, inv) => acc + inv.amountPaid, 0);
+
+    // Dynamic accurate Customer Balance Due:
+    // If a customer record exists in context state, use matchedCustomer.totalDue!
+    // Otherwise calculate Math.max(0, totalSpent - totalPaid).
+    const totalDue = matchedCustomer
+      ? matchedCustomer.totalDue
+      : Math.max(0, Number((totalSpent - totalPaid).toFixed(2)));
+
+    return {
+      count,
       totalSpent,
       totalPaid,
       totalDue,
     };
-  }, [filteredInvoices]);
+  }, [filteredInvoices, matchedCustomer]);
 
   const clearSearch = () => {
     setSearchTerm('');
     setFilterStatus('all');
+  };
+
+  const handleOpenSettlement = (cust: { id: string; name: string; phone: string; totalDue: number }) => {
+    setDueModalCustomer(cust);
+    setSettlementAmount(cust.totalDue.toString());
+    setPaymentMethod('UPI');
+    setSettlementError('');
+  };
+
+  const handleSettlementSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!dueModalCustomer) return;
+    const amount = Number(settlementAmount);
+    if (isNaN(amount) || amount <= 0) {
+      setSettlementError('Please enter a valid payment amount greater than ₹0.');
+      return;
+    }
+    if (amount > dueModalCustomer.totalDue) {
+      setSettlementError(`Payment amount cannot exceed total outstanding due of ₹${dueModalCustomer.totalDue.toLocaleString('en-IN')}.`);
+      return;
+    }
+
+    const receiptInvoice = payCustomerDue(dueModalCustomer.phone || dueModalCustomer.id, amount, paymentMethod);
+    setDueModalCustomer(null);
+    setSettlementAmount('');
+    if (receiptInvoice) {
+      onViewInvoice(receiptInvoice);
+    }
   };
 
   return (
@@ -265,11 +336,66 @@ export const CustomerHistorySection: React.FC<CustomerHistorySectionProps> = ({ 
             <span className="text-[10px] text-slate-500">Total collected</span>
           </div>
 
-          <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-3 sm:p-4">
-            <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider block">Balance Due</span>
-            <div className="text-xl sm:text-2xl font-black text-amber-400 mt-0.5 font-mono">₹{summaryMetrics.totalDue.toLocaleString('en-IN')}</div>
-            <span className="text-[10px] text-slate-500">Unpaid credit</span>
+          <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-3 sm:p-4 flex flex-col justify-between">
+            <div>
+              <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider block">Balance Due</span>
+              <div className="text-xl sm:text-2xl font-black text-amber-400 mt-0.5 font-mono">₹{summaryMetrics.totalDue.toLocaleString('en-IN')}</div>
+            </div>
+            {summaryMetrics.totalDue > 0 && matchedCustomer && (
+              <button
+                type="button"
+                onClick={() => handleOpenSettlement({
+                  id: matchedCustomer.id,
+                  name: matchedCustomer.name,
+                  phone: matchedCustomer.phone,
+                  totalDue: summaryMetrics.totalDue,
+                })}
+                className="mt-2 w-full py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold rounded-xl text-[11px] transition shadow flex items-center justify-center space-x-1 cursor-pointer"
+              >
+                <CreditCard className="w-3.5 h-3.5" />
+                <span>Pay Credit Due</span>
+              </button>
+            )}
           </div>
+        </div>
+      )}
+
+      {/* Customer Credit Outstanding Alert & Pay Due Banner */}
+      {isSearchActive && summaryMetrics.totalDue > 0 && matchedCustomer && (
+        <div className="mb-5 p-4 rounded-2xl bg-gradient-to-r from-amber-500/20 via-amber-600/10 to-slate-950 border border-amber-500/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xl">
+          <div className="flex items-start space-x-3">
+            <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/40 flex items-center justify-center font-bold shrink-0">
+              <AlertCircle className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center space-x-2">
+                <span className="text-[10px] font-black uppercase text-amber-400 font-mono tracking-wider px-2 py-0.5 rounded bg-amber-500/20 border border-amber-500/30">
+                  Outstanding Credit Balance
+                </span>
+                <span className="text-xs text-slate-400 font-mono">{matchedCustomer.name} ({matchedCustomer.phone})</span>
+              </div>
+              <h4 className="text-sm sm:text-base font-extrabold text-white mt-1">
+                Pending Due: <span className="text-amber-300 font-mono font-black text-lg">₹{summaryMetrics.totalDue.toLocaleString('en-IN')}</span>
+              </h4>
+              <p className="text-xs text-slate-300 mt-0.5">
+                Collect full or partial credit payment from customer and issue settlement receipt.
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => handleOpenSettlement({
+              id: matchedCustomer.id,
+              name: matchedCustomer.name,
+              phone: matchedCustomer.phone,
+              totalDue: summaryMetrics.totalDue,
+            })}
+            className="px-4 py-2.5 bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 hover:from-amber-400 hover:to-amber-300 text-slate-950 font-black rounded-xl text-xs transition shadow-xl flex items-center justify-center space-x-2 shrink-0 cursor-pointer group"
+          >
+            <CreditCard className="w-4 h-4 group-hover:scale-110 transition-transform" />
+            <span>Pay Credit Due (Full / Partial)</span>
+          </button>
         </div>
       )}
 
@@ -310,11 +436,10 @@ export const CustomerHistorySection: React.FC<CustomerHistorySectionProps> = ({ 
               return (
                 <div
                   key={inv.id}
-                  onClick={() => onViewInvoice(inv)}
-                  className="group bg-slate-950 hover:bg-slate-900/90 border border-slate-800 hover:border-indigo-500/50 rounded-2xl p-4 sm:p-5 transition-all shadow-md cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                  className="group bg-slate-950 hover:bg-slate-900/90 border border-slate-800 hover:border-indigo-500/50 rounded-2xl p-4 sm:p-5 transition-all shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-4"
                 >
                   {/* Customer & Invoice Overview */}
-                  <div className="flex items-center space-x-3.5">
+                  <div className="flex items-center space-x-3.5 cursor-pointer flex-1" onClick={() => onViewInvoice(inv)}>
                     <div className="w-11 h-11 rounded-xl bg-slate-900 group-hover:bg-indigo-500/10 border border-slate-800 group-hover:border-indigo-500/30 flex items-center justify-center text-indigo-400 font-black shrink-0 transition">
                       <Receipt className="w-5 h-5 text-indigo-400 group-hover:scale-110 transition-transform" />
                     </div>
@@ -372,9 +497,9 @@ export const CustomerHistorySection: React.FC<CustomerHistorySectionProps> = ({ 
                     </div>
                   </div>
 
-                  {/* Amount & Full View Action */}
-                  <div className="flex items-center justify-between sm:justify-end space-x-4 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-900">
-                    <div className="text-left sm:text-right">
+                  {/* Amount & Direct Pay Due Action */}
+                  <div className="flex items-center justify-between sm:justify-end space-x-3 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-900 shrink-0">
+                    <div className="text-left sm:text-right cursor-pointer" onClick={() => onViewInvoice(inv)}>
                       <div className="text-lg font-black text-white font-mono group-hover:text-indigo-300 transition">
                         ₹{inv.totalAmount.toLocaleString('en-IN')}
                       </div>
@@ -388,14 +513,176 @@ export const CustomerHistorySection: React.FC<CustomerHistorySectionProps> = ({ 
                       </div>
                     </div>
 
-                    <div className="px-3.5 py-2 bg-indigo-600 group-hover:bg-indigo-500 text-white text-xs font-bold rounded-xl transition flex items-center space-x-1.5 shadow-md group-hover:scale-105 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => onViewInvoice(inv)}
+                      className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl transition flex items-center space-x-1.5 shadow-md shrink-0 cursor-pointer"
+                    >
                       <ExternalLink className="w-4 h-4" />
-                      <span>Open Full View</span>
-                    </div>
+                      <span>Open View</span>
+                    </button>
                   </div>
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {/* Credit Due Settlement Popup Modal */}
+      {dueModalCustomer && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fadeIn">
+          <div className="bg-slate-900 border border-amber-500/40 rounded-3xl p-6 max-w-lg w-full shadow-2xl relative text-slate-100">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-4 border-b border-slate-800">
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/40 flex items-center justify-center font-bold">
+                  <CreditCard className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-white">Collect Credit Due Payment</h3>
+                  <p className="text-xs text-slate-400 font-mono">
+                    {dueModalCustomer.name} • {dueModalCustomer.phone}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDueModalCustomer(null)}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Current Due Highlight Banner */}
+            <div className="my-4 p-4 rounded-2xl bg-amber-950/40 border border-amber-500/30 flex items-center justify-between">
+              <div>
+                <span className="text-[11px] font-bold text-amber-400 uppercase tracking-wider block">
+                  Current Total Credit Due
+                </span>
+                <div className="text-2xl font-black text-amber-300 font-mono mt-0.5">
+                  ₹{dueModalCustomer.totalDue.toLocaleString('en-IN')}
+                </div>
+              </div>
+              <div className="text-right">
+                <span className="text-[10px] text-slate-400 block font-mono">Settlement Mode</span>
+                <span className="text-xs font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/30">
+                  Receipt Auto-Generated
+                </span>
+              </div>
+            </div>
+
+            {/* Error Message */}
+            {settlementError && (
+              <div className="mb-4 p-3 rounded-xl bg-red-500/15 border border-red-500/30 text-red-400 text-xs font-semibold flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{settlementError}</span>
+              </div>
+            )}
+
+            {/* Form Inputs */}
+            <form onSubmit={handleSettlementSubmit} className="space-y-4">
+              {/* Payment Presets */}
+              <div>
+                <label className="block text-xs font-bold text-slate-300 mb-2">
+                  Select Quick Settlement Option:
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSettlementAmount(dueModalCustomer.totalDue.toString())}
+                    className={`py-2 px-3 rounded-xl border text-xs font-bold transition flex items-center justify-center space-x-1.5 ${
+                      Number(settlementAmount) === dueModalCustomer.totalDue
+                        ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-black'
+                        : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
+                    }`}
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Pay Full Balance (₹{dueModalCustomer.totalDue.toLocaleString('en-IN')})</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setSettlementAmount((dueModalCustomer.totalDue / 2).toFixed(0))}
+                    className={`py-2 px-3 rounded-xl border text-xs font-bold transition flex items-center justify-center space-x-1.5 ${
+                      Number(settlementAmount) === Math.round(dueModalCustomer.totalDue / 2)
+                        ? 'bg-amber-500 text-slate-950 border-amber-400 font-black'
+                        : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
+                    }`}
+                  >
+                    <span>50% Partial (₹{Math.round(dueModalCustomer.totalDue / 2).toLocaleString('en-IN')})</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Custom Amount Input */}
+              <div>
+                <label className="block text-xs font-bold text-slate-300 mb-1">
+                  Custom Payment Amount (₹):
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max={dueModalCustomer.totalDue}
+                  value={settlementAmount}
+                  onChange={e => setSettlementAmount(e.target.value)}
+                  placeholder="Enter amount customer is paying..."
+                  className="w-full bg-slate-950 border border-slate-800 rounded-2xl p-3 text-white font-mono text-base focus:outline-none focus:border-amber-500 shadow-inner"
+                  required
+                />
+              </div>
+
+              {/* Payment Method Selector */}
+              <div>
+                <label className="block text-xs font-bold text-slate-300 mb-1">
+                  Payment Collection Method:
+                </label>
+                <select
+                  value={paymentMethod}
+                  onChange={e => setPaymentMethod(e.target.value as any)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-2xl p-3 text-white text-sm focus:outline-none focus:border-amber-500"
+                >
+                  <option value="UPI">UPI / QR Code Scan</option>
+                  <option value="Cash">Cash Payment</option>
+                  <option value="Card">Debit / Credit Card</option>
+                  <option value="Store Credit">Bank Transfer / NEFT</option>
+                </select>
+              </div>
+
+              {/* Remaining Due Preview */}
+              <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs flex items-center justify-between font-mono">
+                <span className="text-slate-400">Remaining Balance After Payment:</span>
+                <span className="font-bold">
+                  {Number(settlementAmount) >= dueModalCustomer.totalDue ? (
+                    <span className="text-emerald-400">₹0 (Balance NIL)</span>
+                  ) : (
+                    <span className="text-amber-400">
+                      ₹{Math.max(0, dueModalCustomer.totalDue - (Number(settlementAmount) || 0)).toLocaleString('en-IN')}
+                    </span>
+                  )}
+                </span>
+              </div>
+
+              {/* Submit Buttons */}
+              <div className="flex items-center justify-end space-x-3 pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setDueModalCustomer(null)}
+                  className="px-4 py-2.5 rounded-xl text-xs text-slate-400 hover:text-white transition"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black rounded-xl text-xs transition shadow-xl flex items-center space-x-2 cursor-pointer"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Collect Payment & Print Receipt</span>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

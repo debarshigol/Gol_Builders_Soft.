@@ -200,7 +200,8 @@ interface AppContextType {
     paymentMethod: PaymentMethod,
     taxRate?: number,
     discount?: number,
-    collectedAmount?: number
+    collectedAmount?: number,
+    targetCustomerOverride?: Customer
   ) => Invoice | null;
   payCustomerDue: (
     customerId: string,
@@ -273,110 +274,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [cart, setCart] = useState<CartItem[]>([]);
   const [lastGeneratedInvoice, setLastGeneratedInvoice] = useState<Invoice | null>(null);
 
-  // Hydrate from localStorage on client mount (avoids SSR hydration mismatch)
+  // Client mount effect
   useEffect(() => {
     setIsMounted(true);
-    try {
-      const savedProducts = localStorage.getItem(LOCAL_STORAGE_PREFIX + 'products');
-      const savedCustomers = localStorage.getItem(LOCAL_STORAGE_PREFIX + 'customers');
-      const savedInvoices = localStorage.getItem(LOCAL_STORAGE_PREFIX + 'invoices');
-      const savedQuotations = localStorage.getItem(LOCAL_STORAGE_PREFIX + 'quotations');
-      const savedTheme = localStorage.getItem(LOCAL_STORAGE_PREFIX + 'theme') as 'dark' | 'light' | null;
-
-      if (savedProducts) setProducts(JSON.parse(savedProducts));
-      if (savedCustomers) setCustomers(JSON.parse(savedCustomers));
-      if (savedInvoices) setInvoices(JSON.parse(savedInvoices));
-      if (savedQuotations) setQuotations(JSON.parse(savedQuotations));
-      if (savedTheme === 'light' || savedTheme === 'dark') {
-        setTheme(savedTheme);
-      }
-    } catch (e) {
-      console.warn('LocalStorage unavailable:', e);
-    }
-  }, []);
-
-  // Save changes to localStorage & document element (only after client mount)
-  useEffect(() => {
-    if (!isMounted) return;
-    try {
-      const pStr = JSON.stringify(products);
-      if (localStorage.getItem(LOCAL_STORAGE_PREFIX + 'products') !== pStr) {
-        localStorage.setItem(LOCAL_STORAGE_PREFIX + 'products', pStr);
-      }
-      const cStr = JSON.stringify(customers);
-      if (localStorage.getItem(LOCAL_STORAGE_PREFIX + 'customers') !== cStr) {
-        localStorage.setItem(LOCAL_STORAGE_PREFIX + 'customers', cStr);
-      }
-      const iStr = JSON.stringify(invoices);
-      if (localStorage.getItem(LOCAL_STORAGE_PREFIX + 'invoices') !== iStr) {
-        localStorage.setItem(LOCAL_STORAGE_PREFIX + 'invoices', iStr);
-      }
-      const qStr = JSON.stringify(quotations);
-      if (localStorage.getItem(LOCAL_STORAGE_PREFIX + 'quotations') !== qStr) {
-        localStorage.setItem(LOCAL_STORAGE_PREFIX + 'quotations', qStr);
-      }
-      localStorage.setItem(LOCAL_STORAGE_PREFIX + 'theme', theme);
-      if (theme === 'light') {
-        document.documentElement.classList.add('light-mode');
-      } else {
-        document.documentElement.classList.remove('light-mode');
-      }
-    } catch (e) {
-      console.warn('Failed to save to localStorage:', e);
-    }
-  }, [products, customers, invoices, quotations, theme, isMounted]);
-
-  // Real-time synchronization across browser tabs/windows
-  useEffect(() => {
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === LOCAL_STORAGE_PREFIX + 'products' && e.newValue) {
-        try {
-          const parsed = JSON.parse(e.newValue);
-          if (Array.isArray(parsed)) {
-            setProducts(prev => {
-              if (JSON.stringify(prev) === e.newValue) return prev;
-              return parsed;
-            });
-          }
-        } catch (err) {}
-      }
-      if (e.key === LOCAL_STORAGE_PREFIX + 'customers' && e.newValue) {
-        try {
-          const parsed = JSON.parse(e.newValue);
-          if (Array.isArray(parsed)) {
-            setCustomers(prev => {
-              if (JSON.stringify(prev) === e.newValue) return prev;
-              return parsed;
-            });
-          }
-        } catch (err) {}
-      }
-      if (e.key === LOCAL_STORAGE_PREFIX + 'invoices' && e.newValue) {
-        try {
-          const parsed = JSON.parse(e.newValue);
-          if (Array.isArray(parsed)) {
-            setInvoices(prev => {
-              if (JSON.stringify(prev) === e.newValue) return prev;
-              return parsed;
-            });
-          }
-        } catch (err) {}
-      }
-      if (e.key === LOCAL_STORAGE_PREFIX + 'quotations' && e.newValue) {
-        try {
-          const parsed = JSON.parse(e.newValue);
-          if (Array.isArray(parsed)) {
-            setQuotations(prev => {
-              if (JSON.stringify(prev) === e.newValue) return prev;
-              return parsed;
-            });
-          }
-        } catch (err) {}
-      }
-    };
-
-    window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 
   // Supabase Cloud PostgreSQL Real-time Synchronization (when configured)
@@ -406,22 +306,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       .channel('public:db-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, () => {
         sb.from('products').select('*').order('created_at', { ascending: false }).then(({ data }) => {
-          if (data) setProducts(data.map(mapDbProduct));
+          if (data) {
+            const mapped = data.map(mapDbProduct);
+            setProducts(prev => (JSON.stringify(prev) === JSON.stringify(mapped) ? prev : mapped));
+          }
         });
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, () => {
         sb.from('customers').select('*').order('created_at', { ascending: false }).then(({ data }) => {
-          if (data) setCustomers(data.map(mapDbCustomer));
+          if (data) {
+            const mapped = data.map(mapDbCustomer);
+            setCustomers(prev => (JSON.stringify(prev) === JSON.stringify(mapped) ? prev : mapped));
+          }
         });
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'invoices' }, () => {
         sb.from('invoices').select('*').order('created_at', { ascending: false }).then(({ data }) => {
-          if (data) setInvoices(data.map(mapDbInvoice));
+          if (data) {
+            const mapped = data.map(mapDbInvoice);
+            setInvoices(prev => (JSON.stringify(prev) === JSON.stringify(mapped) ? prev : mapped));
+          }
         });
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'quotations' }, () => {
         sb.from('quotations').select('*').order('created_at', { ascending: false }).then(({ data }) => {
-          if (data) setQuotations(data.map(mapDbQuotation));
+          if (data) {
+            const mapped = data.map(mapDbQuotation);
+            setQuotations(prev => (JSON.stringify(prev) === JSON.stringify(mapped) ? prev : mapped));
+          }
         });
       })
       .subscribe();
@@ -536,10 +448,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     paymentMethod: PaymentMethod,
     taxRate: number = 0,
     discount: number = 0,
-    collectedAmount?: number
+    collectedAmount?: number,
+    targetCustomerOverride?: Customer
   ): Invoice | null => {
     const validItems = cart.filter(item => item.quantity > 0);
-    if (!activeCustomer || validItems.length === 0) return null;
+    const targetCust = targetCustomerOverride || activeCustomer;
+    if (!targetCust || validItems.length === 0) return null;
 
     const subtotal = validItems.reduce((acc, item) => acc + item.product.price * item.quantity, 0);
     const taxAmount = Number(((subtotal * taxRate) / 100).toFixed(2));
@@ -555,9 +469,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const newInvoice: Invoice = {
       id: `INV-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
-      customerPhone: activeCustomer.phone,
-      customerName: activeCustomer.name,
-      customerAddress: activeCustomer.address,
+      customerPhone: targetCust.phone,
+      customerName: targetCust.name,
+      customerAddress: targetCust.address,
       items: validItems,
       subtotal,
       taxRate,
@@ -585,16 +499,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
 
     const updatedCustomerState: Customer = {
-      ...activeCustomer,
-      totalPurchases: activeCustomer.totalPurchases + 1,
-      totalSpent: activeCustomer.totalSpent + totalAmount,
-      totalDue: (activeCustomer.totalDue || 0) + dueAmount,
+      ...targetCust,
+      totalPurchases: (targetCust.totalPurchases || 0) + 1,
+      totalSpent: (targetCust.totalSpent || 0) + totalAmount,
+      totalDue: (targetCust.totalDue || 0) + dueAmount,
     };
 
-    setCustomers(prevCustomers =>
-      prevCustomers.map(c => (c.id === activeCustomer.id ? updatedCustomerState : c))
-    );
+    setCustomers(prevCustomers => {
+      const existing = prevCustomers.find(
+        c => c.phone.replace(/\D/g, '') === targetCust.phone.replace(/\D/g, '')
+      );
+      if (existing) {
+        return prevCustomers.map(c =>
+          c.phone.replace(/\D/g, '') === targetCust.phone.replace(/\D/g, '')
+            ? updatedCustomerState
+            : c
+        );
+      } else {
+        return [updatedCustomerState, ...prevCustomers];
+      }
+    });
 
+    setActiveCustomer(updatedCustomerState);
     setLastGeneratedInvoice(newInvoice);
 
     // Sync to Supabase Cloud PostgreSQL
@@ -625,11 +551,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Past Due Settlement Payment
   const payCustomerDue = (
-    customerId: string,
+    customerIdOrPhone: string,
     settlementAmount: number,
     paymentMethod: PaymentMethod
   ): Invoice | null => {
-    const cust = customers.find(c => c.id === customerId);
+    const cleanQuery = customerIdOrPhone.trim().replace(/\D/g, '');
+    const cust = customers.find(
+      c => c.id === customerIdOrPhone || (cleanQuery.length > 0 && c.phone.replace(/\D/g, '') === cleanQuery)
+    );
     if (!cust || settlementAmount <= 0) return null;
 
     const previousDue = cust.totalDue || 0;
@@ -657,11 +586,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       customerName: cust.name,
       customerAddress: cust.address,
       items: [settlementItem],
-      subtotal: actualPaid,
+      subtotal: 0,
       taxRate: 0,
       taxAmount: 0,
       discount: 0,
-      totalAmount: actualPaid,
+      totalAmount: 0,
       amountPaid: actualPaid,
       dueAmount: newRemainingDue,
       paymentMethod,
@@ -672,35 +601,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       status: 'Completed',
     };
 
+    // Preserve customer's gross totalSpent UNCHANGED (since no new item purchase occurred)
+    const updatedCustState: Customer = {
+      ...cust,
+      totalDue: newRemainingDue,
+      totalSpent: cust.totalSpent,
+    };
+
     setInvoices(prev => [newInvoice, ...prev]);
 
-    let updatedCustState: Customer | null = null;
-
     setCustomers(prevCustomers =>
-      prevCustomers.map(c => {
-        if (c.id === customerId) {
-          updatedCustState = {
-            ...c,
-            totalDue: newRemainingDue,
-            totalSpent: c.totalSpent + actualPaid,
-          };
-          if (activeCustomer && activeCustomer.id === customerId) {
-            setActiveCustomer(updatedCustState);
-          }
-          return updatedCustState;
-        }
-        return c;
-      })
+      prevCustomers.map(c =>
+        c.phone.replace(/\D/g, '') === cust.phone.replace(/\D/g, '') ? updatedCustState : c
+      )
     );
+
+    if (activeCustomer && activeCustomer.phone.replace(/\D/g, '') === cust.phone.replace(/\D/g, '')) {
+      setActiveCustomer(updatedCustState);
+    }
 
     setLastGeneratedInvoice(newInvoice);
 
     // Sync to Supabase Cloud PostgreSQL
     if (isSupabaseConfigured && supabase) {
-      supabase.from('invoices').insert(mapInvoiceToDb(newInvoice)).then();
-      if (updatedCustState) {
-        supabase.from('customers').upsert(mapCustomerToDb(updatedCustState)).then();
-      }
+      const sb = supabase;
+      sb.from('invoices').insert(mapInvoiceToDb(newInvoice)).then(({ error }) => {
+        if (error) console.error('Supabase settlement invoice error:', error);
+      });
+      sb.from('customers').upsert(mapCustomerToDb(updatedCustState)).then(({ error }) => {
+        if (error) console.error('Supabase customer due update error:', error);
+      });
     }
 
     return newInvoice;

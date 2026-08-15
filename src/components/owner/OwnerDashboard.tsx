@@ -802,26 +802,39 @@ export const OwnerDashboard: React.FC<{ onViewInvoice: (inv: Invoice) => void }>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
-                {filteredCustomers.map(c => (
-                  <tr key={c.id} className="hover:bg-slate-800/40 transition">
-                    <td className="py-3 px-3 font-semibold text-white">{c.name}</td>
-                    <td className="py-3 px-3 font-mono text-emerald-400">📱 {c.phone}</td>
-                    <td className="py-3 px-3 text-slate-400">{c.address}</td>
-                    <td className="py-3 px-3 text-center font-mono font-bold">{c.totalPurchases}</td>
-                    <td className="py-3 px-3 text-right font-mono font-bold text-white">
-                      ₹{c.totalSpent.toLocaleString()}
-                    </td>
-                    <td className="py-3 px-3 text-right font-mono">
-                      {c.totalDue && c.totalDue > 0 ? (
-                        <span className="px-2.5 py-1 rounded-md text-xs font-extrabold bg-amber-500/20 text-amber-400 border border-amber-500/30">
-                          ₹{c.totalDue.toLocaleString()} Due
-                        </span>
-                      ) : (
-                        <span className="text-emerald-400 font-semibold">₹0 Clear</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                {filteredCustomers.map(c => {
+                  const actualVisits = invoices.filter(
+                    i => !i.isSettlementReceipt && i.customerPhone.replace(/\D/g, '') === c.phone.replace(/\D/g, '')
+                  ).length;
+                  const totalVisits = Math.max(c.totalPurchases || 0, actualVisits);
+                  const actualSpent = invoices
+                    .filter(i => !i.isSettlementReceipt && i.customerPhone.replace(/\D/g, '') === c.phone.replace(/\D/g, ''))
+                    .reduce((sum, i) => sum + i.totalAmount, 0);
+                  const lifetimeSpent = Math.max(c.totalSpent || 0, actualSpent);
+
+                  return (
+                    <tr key={c.id} className="hover:bg-slate-800/40 transition">
+                      <td className="py-3 px-3 font-semibold text-white">{c.name}</td>
+                      <td className="py-3 px-3 font-mono text-emerald-400">📱 {c.phone}</td>
+                      <td className="py-3 px-3 text-slate-400">{c.address}</td>
+                      <td className="py-3 px-3 text-center font-mono font-bold text-indigo-400">
+                        {totalVisits}
+                      </td>
+                      <td className="py-3 px-3 text-right font-mono font-bold text-white">
+                        ₹{lifetimeSpent.toLocaleString('en-IN')}
+                      </td>
+                      <td className="py-3 px-3 text-right font-mono">
+                        {c.totalDue && c.totalDue > 0 ? (
+                          <span className="px-2.5 py-1 rounded-md text-xs font-extrabold bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                            ₹{c.totalDue.toLocaleString('en-IN')} Due
+                          </span>
+                        ) : (
+                          <span className="text-emerald-400 font-semibold">₹0 Clear</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

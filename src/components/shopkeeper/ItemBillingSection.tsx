@@ -173,7 +173,7 @@ export const ItemBillingSection: React.FC<ItemBillingSectionProps> = ({
       lookupCustomerByPhone(targetCust.phone);
     }
 
-    const inv = generateInvoice(paymentMethod, taxRate, discount, actualPaid);
+    const inv = generateInvoice(paymentMethod, taxRate, discount, actualPaid, targetCust);
     if (inv) {
       setCollectedAmountInput('');
       setCustomerPhone('');
