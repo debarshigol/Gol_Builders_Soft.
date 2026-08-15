@@ -343,6 +343,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   }, []);
 
+  // Sync theme state to the <html> element so CSS light-mode overrides activate
+  useEffect(() => {
+    if (theme === 'light') {
+      document.documentElement.classList.add('light-mode');
+    } else {
+      document.documentElement.classList.remove('light-mode');
+    }
+  }, [theme]);
+
   const toggleTheme = () => {
     setTheme(prev => (prev === 'dark' ? 'light' : 'dark'));
   };
@@ -463,6 +472,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (collectedAmount !== undefined && collectedAmount !== null && !isNaN(collectedAmount)) {
       amountPaid = Math.min(totalAmount, Math.max(0, Number(collectedAmount.toFixed(2))));
     }
+    // dueAmount on the invoice = what is still owed FROM THIS TRANSACTION
     const dueAmount = Number((totalAmount - amountPaid).toFixed(2));
     const paymentStatus: 'Paid' | 'Partial' | 'Unpaid' =
       dueAmount <= 0 ? 'Paid' : amountPaid > 0 ? 'Partial' : 'Unpaid';
@@ -498,22 +508,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       })
     );
 
-    const updatedCustomerState: Customer = {
+    // Compute updated customer stats from the LATEST row in state (not from the
+    // potentially-stale targetCust snapshot) to avoid double-counting across
+    // rapid successive invoices or Supabase real-time updates.
+    let updatedCustomerState: Customer = {
       ...targetCust,
       totalPurchases: (targetCust.totalPurchases || 0) + 1,
-      totalSpent: (targetCust.totalSpent || 0) + totalAmount,
-      totalDue: (targetCust.totalDue || 0) + dueAmount,
+      totalSpent: Number(((targetCust.totalSpent || 0) + totalAmount).toFixed(2)),
+      totalDue: Number(((targetCust.totalDue || 0) + dueAmount).toFixed(2)),
     };
 
     setCustomers(prevCustomers => {
-      const existing = prevCustomers.find(
-        c => c.phone.replace(/\D/g, '') === targetCust.phone.replace(/\D/g, '')
-      );
+      const targetPhone = targetCust.phone.replace(/\D/g, '');
+      const existing = prevCustomers.find(c => c.phone.replace(/\D/g, '') === targetPhone);
       if (existing) {
+        // Always derive from the freshest row in state
+        updatedCustomerState = {
+          ...existing,
+          totalPurchases: (existing.totalPurchases || 0) + 1,
+          totalSpent: Number(((existing.totalSpent || 0) + totalAmount).toFixed(2)),
+          totalDue: Number(((existing.totalDue || 0) + dueAmount).toFixed(2)),
+        };
         return prevCustomers.map(c =>
-          c.phone.replace(/\D/g, '') === targetCust.phone.replace(/\D/g, '')
-            ? updatedCustomerState
-            : c
+          c.phone.replace(/\D/g, '') === targetPhone ? updatedCustomerState : c
         );
       } else {
         return [updatedCustomerState, ...prevCustomers];
@@ -526,14 +543,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Sync to Supabase Cloud PostgreSQL
     if (isSupabaseConfigured && supabase) {
       const sb = supabase;
-      // 1. Insert Invoice
+      // 1. Insert Invoice — invoice.due_amount records what is owed from THIS transaction
       sb.from('invoices').insert(mapInvoiceToDb(newInvoice)).then(({ error }) => {
         if (error) console.error('Supabase invoice insert error:', error);
       });
 
-      // 2. Upsert Customer stats
-      sb.from('customers').upsert(mapCustomerToDb(updatedCustomerState)).then(({ error }) => {
-        if (error) console.error('Supabase customer update error:', error);
+      // 2. Upsert Customer stats — re-read updatedCustomerState after state setter has run
+      // We use a microtask delay so the state updater above has captured the latest row.
+      Promise.resolve().then(() => {
+        sb.from('customers').upsert(mapCustomerToDb(updatedCustomerState)).then(({ error }) => {
+          if (error) console.error('Supabase customer update error:', error);
+        });
       });
 
       // 3. Decrement Product Stock levels
@@ -563,6 +583,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const previousDue = cust.totalDue || 0;
     const actualPaid = Math.min(previousDue, Math.max(0, settlementAmount));
+    // newRemainingDue is the CUSTOMER's outstanding balance after this payment.
+    // It belongs in the customers table, NOT as the invoice's dueAmount.
     const newRemainingDue = Math.max(0, Number((previousDue - actualPaid).toFixed(2)));
 
     const settlementItem: CartItem = {
@@ -590,18 +612,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       taxRate: 0,
       taxAmount: 0,
       discount: 0,
-      totalAmount: 0,
+      // totalAmount for settlement = the amount being cleared
+      totalAmount: actualPaid,
       amountPaid: actualPaid,
-      dueAmount: newRemainingDue,
+      // dueAmount on THIS invoice = 0 — the settlement transaction itself is fully paid.
+      // The customer's remaining balance (newRemainingDue) is tracked in customers.total_due.
+      dueAmount: 0,
       paymentMethod,
-      paymentStatus: newRemainingDue <= 0 ? 'Paid' : 'Partial',
+      paymentStatus: 'Paid',
       isSettlementReceipt: true,
+      // previousDue records the customer's balance BEFORE this payment (for receipt display)
       previousDue,
       createdAt: new Date().toISOString(),
       status: 'Completed',
     };
 
-    // Preserve customer's gross totalSpent UNCHANGED (since no new item purchase occurred)
+    // Preserve customer's gross totalSpent UNCHANGED (no new item purchase occurred).
+    // Only reduce totalDue by the amount actually paid.
     const updatedCustState: Customer = {
       ...cust,
       totalDue: newRemainingDue,
@@ -625,9 +652,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Sync to Supabase Cloud PostgreSQL
     if (isSupabaseConfigured && supabase) {
       const sb = supabase;
+      // invoice.due_amount = 0 (settlement itself is paid in full)
+      // invoice.previous_due = customer's balance before this payment
       sb.from('invoices').insert(mapInvoiceToDb(newInvoice)).then(({ error }) => {
         if (error) console.error('Supabase settlement invoice error:', error);
       });
+      // customers.total_due = newRemainingDue (updated balance after payment)
       sb.from('customers').upsert(mapCustomerToDb(updatedCustState)).then(({ error }) => {
         if (error) console.error('Supabase customer due update error:', error);
       });
@@ -710,30 +740,47 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setInvoices(prev => [newInvoice, ...prev]);
 
-    let targetCust: Customer | null = null;
+    // Build the updated customer record synchronously so we can upsert it to
+    // Supabase reliably (setCustomers is async; reading targetCust from inside
+    // the callback is a race condition).
+    const existingCust = customers.find(c => c.phone === data.customerPhone);
+    let finalCustState: Customer;
+    if (existingCust) {
+      finalCustState = {
+        ...existingCust,
+        totalPurchases: (existingCust.totalPurchases || 0) + 1,
+        totalSpent: Number(((existingCust.totalSpent || 0) + totalAmount).toFixed(2)),
+        totalDue: Number(((existingCust.totalDue || 0) + dueAmount).toFixed(2)),
+      };
+    } else {
+      finalCustState = {
+        id: `c-${Date.now()}`,
+        phone: data.customerPhone,
+        name: data.customerName,
+        address: data.customerAddress || 'N/A',
+        registeredAt: new Date().toISOString(),
+        totalPurchases: 1,
+        totalSpent: Number(totalAmount.toFixed(2)),
+        totalDue: Number(dueAmount.toFixed(2)),
+      };
+    }
 
     setCustomers(prevCustomers => {
-      const existing = prevCustomers.find(c => c.phone === data.customerPhone);
-      if (existing) {
-        targetCust = {
-          ...existing,
-          totalPurchases: existing.totalPurchases + 1,
-          totalSpent: existing.totalSpent + totalAmount,
-          totalDue: (existing.totalDue || 0) + dueAmount,
+      const idx = prevCustomers.findIndex(c => c.phone === data.customerPhone);
+      if (idx !== -1) {
+        // Recompute from the freshest row to avoid stale-snapshot accumulation
+        const fresh = prevCustomers[idx];
+        const freshUpdated: Customer = {
+          ...fresh,
+          totalPurchases: (fresh.totalPurchases || 0) + 1,
+          totalSpent: Number(((fresh.totalSpent || 0) + totalAmount).toFixed(2)),
+          totalDue: Number(((fresh.totalDue || 0) + dueAmount).toFixed(2)),
         };
-        return prevCustomers.map(c => (c.phone === data.customerPhone ? targetCust! : c));
+        const next = [...prevCustomers];
+        next[idx] = freshUpdated;
+        return next;
       } else {
-        targetCust = {
-          id: `c-${Date.now()}`,
-          phone: data.customerPhone,
-          name: data.customerName,
-          address: data.customerAddress || 'N/A',
-          registeredAt: new Date().toISOString(),
-          totalPurchases: 1,
-          totalSpent: totalAmount,
-          totalDue: dueAmount,
-        };
-        return [targetCust, ...prevCustomers];
+        return [finalCustState, ...prevCustomers];
       }
     });
 
@@ -742,9 +789,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Sync to Supabase Cloud PostgreSQL
     if (isSupabaseConfigured && supabase) {
       supabase.from('invoices').insert(mapInvoiceToDb(newInvoice)).then();
-      if (targetCust) {
-        supabase.from('customers').upsert(mapCustomerToDb(targetCust)).then();
-      }
+      // Use the synchronously computed finalCustState — no race condition
+      supabase.from('customers').upsert(mapCustomerToDb(finalCustState)).then();
     }
 
     return newInvoice;
