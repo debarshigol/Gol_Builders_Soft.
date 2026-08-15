@@ -254,30 +254,37 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 const LOCAL_STORAGE_PREFIX = 'gol_building_materials_v9_';
-const PRODUCTS_CACHE_KEY = `${LOCAL_STORAGE_PREFIX}products_cache`;
-const PRODUCTS_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
+const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
-/** Read products from localStorage cache synchronously (runs before any useEffect). */
-function loadCachedProducts(): Product[] {
+// ── Generic cache helpers ──────────────────────────────────────────────────────────
+function loadCache<T>(key: string): T[] {
   if (typeof window === 'undefined') return [];
   try {
-    const raw = localStorage.getItem(PRODUCTS_CACHE_KEY);
+    const raw = localStorage.getItem(key);
     if (!raw) return [];
-    const { ts, data } = JSON.parse(raw) as { ts: number; data: Product[] };
-    if (Date.now() - ts > PRODUCTS_CACHE_TTL_MS) return []; // stale
+    const { ts, data } = JSON.parse(raw) as { ts: number; data: T[] };
+    if (Date.now() - ts > CACHE_TTL_MS) return [];
     return Array.isArray(data) ? data : [];
   } catch {
     return [];
   }
 }
 
-function saveProductsCache(products: Product[]) {
+function saveCache<T>(key: string, data: T[]) {
   try {
-    localStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify({ ts: Date.now(), data: products }));
-  } catch {
-    // localStorage may be unavailable (private browsing quota)
-  }
+    localStorage.setItem(key, JSON.stringify({ ts: Date.now(), data }));
+  } catch {}
 }
+
+const PRODUCTS_CACHE_KEY   = `${LOCAL_STORAGE_PREFIX}products_cache`;
+const CUSTOMERS_CACHE_KEY  = `${LOCAL_STORAGE_PREFIX}customers_cache`;
+const INVOICES_CACHE_KEY   = `${LOCAL_STORAGE_PREFIX}invoices_cache`;
+const QUOTATIONS_CACHE_KEY = `${LOCAL_STORAGE_PREFIX}quotations_cache`;
+
+const loadCachedProducts   = () => loadCache<Product>(PRODUCTS_CACHE_KEY);
+const loadCachedCustomers  = () => loadCache<Customer>(CUSTOMERS_CACHE_KEY);
+const loadCachedInvoices   = () => loadCache<Invoice>(INVOICES_CACHE_KEY);
+const loadCachedQuotations = () => loadCache<Quotation>(QUOTATIONS_CACHE_KEY);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [activeRole, setActiveRole] = useState<UserRole>('shopkeeper');
@@ -301,12 +308,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [lastGeneratedInvoice, setLastGeneratedInvoice] = useState<Invoice | null>(null);
 
   // Client mount effect — runs only on the client after hydration succeeds.
-  // Load the localStorage product cache here so SSR and initial client render
-  // both start with [] (no hydration mismatch), then immediately populate from cache.
+  // Populate all four tables from their localStorage caches immediately so the
+  // owner dashboard (and shopkeeper catalog) appear before Supabase responds.
   useEffect(() => {
     setIsMounted(true);
-    const cached = loadCachedProducts();
-    if (cached.length > 0) setProducts(cached);
+    const cp = loadCachedProducts();   if (cp.length > 0)  setProducts(cp);
+    const cc = loadCachedCustomers();  if (cc.length > 0)  setCustomers(cc);
+    const ci = loadCachedInvoices();   if (ci.length > 0)  setInvoices(ci);
+    const cq = loadCachedQuotations(); if (cq.length > 0)  setQuotations(cq);
   }, []);
 
   // Supabase Cloud PostgreSQL Real-time Synchronization (when configured)
@@ -324,7 +333,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (data && !error && data.length > 0) {
           const mapped = data.map(mapDbProduct);
           setProducts(mapped);
-          saveProductsCache(mapped); // keep cache warm for next visit
+          saveCache(PRODUCTS_CACHE_KEY, mapped); // keep cache warm for next visit
         }
       });
 
@@ -335,54 +344,66 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       .select('id,phone,name,address,registered_at,total_purchases,total_spent,total_due')
       .order('created_at', { ascending: false })
       .then(({ data, error }) => {
-        if (data && !error && data.length > 0) setCustomers(data.map(mapDbCustomer));
+        if (data && !error && data.length > 0) {
+          const mapped = data.map(mapDbCustomer);
+          setCustomers(mapped);
+          saveCache(CUSTOMERS_CACHE_KEY, mapped);
+        }
       });
 
     sb.from('invoices')
       .select('id,customer_phone,customer_name,customer_address,customer_gstin,items,subtotal,tax_rate,tax_amount,cgst_amount,sgst_amount,discount,total_amount,amount_paid,due_amount,payment_method,payment_status,is_settlement_receipt,is_gst_invoice,previous_due,status,created_at')
       .order('created_at', { ascending: false })
       .then(({ data, error }) => {
-        if (data && !error && data.length > 0) setInvoices(data.map(mapDbInvoice));
+        if (data && !error && data.length > 0) {
+          const mapped = data.map(mapDbInvoice);
+          setInvoices(mapped);
+          saveCache(INVOICES_CACHE_KEY, mapped);
+        }
       });
 
     sb.from('quotations')
       .select('id,customer_name,customer_phone,customer_address,notes,items,subtotal,tax_rate,tax_amount,discount,total_amount,created_at,valid_until,status,is_targeted,owner_call_log')
       .order('created_at', { ascending: false })
       .then(({ data, error }) => {
-        if (data && !error && data.length > 0) setQuotations(data.map(mapDbQuotation));
+        if (data && !error && data.length > 0) {
+          const mapped = data.map(mapDbQuotation);
+          setQuotations(mapped);
+          saveCache(QUOTATIONS_CACHE_KEY, mapped);
+        }
       });
 
     // ── Step 3: Real-time subscriptions ──────────────────────────────────────
-    // Products: patch the changed row in-place — no full table refetch.
-    // Others: prepend new rows / update existing rows individually.
+    // Patch individual rows in-place; also keep caches warm so the next
+    // page load is instant even after a real-time update.
     const channel = sb
       .channel('public:db-changes')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'products' }, ({ new: row }) => {
-        if (row) setProducts(prev => [mapDbProduct(row), ...prev]);
+        if (row) setProducts(prev => { const n = [mapDbProduct(row), ...prev]; saveCache(PRODUCTS_CACHE_KEY, n); return n; });
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'products' }, ({ new: row }) => {
-        if (row) setProducts(prev => prev.map(p => p.id === row.id ? mapDbProduct(row) : p));
+        if (row) setProducts(prev => { const n = prev.map(p => p.id === row.id ? mapDbProduct(row) : p); saveCache(PRODUCTS_CACHE_KEY, n); return n; });
       })
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'products' }, ({ old: row }) => {
-        if (row) setProducts(prev => prev.filter(p => p.id !== row.id));
+        if (row) setProducts(prev => { const n = prev.filter(p => p.id !== row.id); saveCache(PRODUCTS_CACHE_KEY, n); return n; });
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'customers' }, ({ new: row }) => {
-        if (row) setCustomers(prev => [mapDbCustomer(row), ...prev]);
+        if (row) setCustomers(prev => { const n = [mapDbCustomer(row), ...prev]; saveCache(CUSTOMERS_CACHE_KEY, n); return n; });
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'customers' }, ({ new: row }) => {
-        if (row) setCustomers(prev => prev.map(c => c.id === row.id ? mapDbCustomer(row) : c));
+        if (row) setCustomers(prev => { const n = prev.map(c => c.id === row.id ? mapDbCustomer(row) : c); saveCache(CUSTOMERS_CACHE_KEY, n); return n; });
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'invoices' }, ({ new: row }) => {
-        if (row) setInvoices(prev => [mapDbInvoice(row), ...prev]);
+        if (row) setInvoices(prev => { const n = [mapDbInvoice(row), ...prev]; saveCache(INVOICES_CACHE_KEY, n); return n; });
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'invoices' }, ({ new: row }) => {
-        if (row) setInvoices(prev => prev.map(inv => inv.id === row.id ? mapDbInvoice(row) : inv));
+        if (row) setInvoices(prev => { const n = prev.map(inv => inv.id === row.id ? mapDbInvoice(row) : inv); saveCache(INVOICES_CACHE_KEY, n); return n; });
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'quotations' }, ({ new: row }) => {
-        if (row) setQuotations(prev => [mapDbQuotation(row), ...prev]);
+        if (row) setQuotations(prev => { const n = [mapDbQuotation(row), ...prev]; saveCache(QUOTATIONS_CACHE_KEY, n); return n; });
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'quotations' }, ({ new: row }) => {
-        if (row) setQuotations(prev => prev.map(q => q.id === row.id ? mapDbQuotation(row) : q));
+        if (row) setQuotations(prev => { const n = prev.map(q => q.id === row.id ? mapDbQuotation(row) : q); saveCache(QUOTATIONS_CACHE_KEY, n); return n; });
       })
       .subscribe();
 
