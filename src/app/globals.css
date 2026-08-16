@@ -38,18 +38,39 @@ body {
 
 /* Keyframe Animations */
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @keyframes scaleUp {
-  from { opacity: 0; transform: scale(0.96); }
-  to { opacity: 1; transform: scale(1); }
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 @keyframes pulseGlow {
-  0%, 100% { opacity: 0.4; }
-  50% { opacity: 0.8; }
+
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+
+  50% {
+    opacity: 0.8;
+  }
 }
 
 .animate-fadeIn {
@@ -87,6 +108,7 @@ body {
 .scrollbar-none::-webkit-scrollbar {
   display: none;
 }
+
 .scrollbar-none {
   -ms-overflow-style: none;
   scrollbar-width: none;
@@ -102,12 +124,16 @@ body {
   body * {
     visibility: hidden !important;
   }
+
   .no-print {
     display: none !important;
   }
-  #printable-receipt, #printable-receipt * {
+
+  #printable-receipt,
+  #printable-receipt * {
     visibility: visible !important;
   }
+
   #printable-receipt {
     position: absolute !important;
     left: 0 !important;
@@ -406,4 +432,57 @@ html.light-mode ::-webkit-scrollbar-thumb {
 
 html.light-mode ::-webkit-scrollbar-thumb:hover {
   background: #d1d5db;
+}
+
+/* ==========================================================================
+   INVOICE MODAL LIGHT MODE OVERRIDES
+   ========================================================================== */
+html.light-mode .invoice-modal-card {
+  background-color: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25) !important;
+  color: #0f172a !important;
+}
+
+html.light-mode .invoice-modal-header {
+  background-color: #ffffff !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+}
+
+html.light-mode .invoice-modal-title {
+  color: #0f172a !important;
+}
+
+html.light-mode .invoice-modal-subtitle {
+  color: #64748b !important;
+}
+
+html.light-mode .invoice-modal-body {
+  background-color: #f8fafc !important;
+}
+
+html.light-mode .invoice-modal-footer {
+  background-color: #ffffff !important;
+  border-top: 1px solid #e2e8f0 !important;
+}
+
+html.light-mode .invoice-btn-secondary {
+  background-color: #f1f5f9 !important;
+  color: #1e293b !important;
+  border: 1px solid #cbd5e1 !important;
+}
+
+html.light-mode .invoice-btn-secondary:hover {
+  background-color: #e2e8f0 !important;
+  color: #0f172a !important;
+  border-color: #94a3b8 !important;
+}
+
+html.light-mode .invoice-btn-close {
+  color: #64748b !important;
+}
+
+html.light-mode .invoice-btn-close:hover {
+  color: #0f172a !important;
+  background-color: #f1f5f9 !important;
 }
