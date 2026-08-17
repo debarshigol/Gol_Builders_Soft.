@@ -35,25 +35,6 @@ interface ItemBillingSectionProps {
   setIsCartModalOpen?: (open: boolean) => void;
 }
 
-// ── Frequency map cache (localStorage) ──────────────────────────────────────────
-const FREQ_CACHE_KEY = 'gol_building_materials_v9_freq_cache';
-
-function loadCachedFreqMap(): Record<string, number> {
-  if (typeof window === 'undefined') return {};
-  try {
-    const raw = localStorage.getItem(FREQ_CACHE_KEY);
-    return raw ? (JSON.parse(raw) as Record<string, number>) : {};
-  } catch {
-    return {};
-  }
-}
-
-function saveFreqCache(map: Record<string, number>) {
-  try {
-    localStorage.setItem(FREQ_CACHE_KEY, JSON.stringify(map));
-  } catch {}
-}
-
 export const ItemBillingSection: React.FC<ItemBillingSectionProps> = ({
   onInvoiceGenerated,
   searchTerm: propSearchTerm,
@@ -63,7 +44,6 @@ export const ItemBillingSection: React.FC<ItemBillingSectionProps> = ({
 }) => {
   const {
     products,
-    invoices,
     cart,
     addToCart,
     updateCartQuantity,
@@ -134,39 +114,7 @@ export const ItemBillingSection: React.FC<ItemBillingSectionProps> = ({
     return ['All', ...Array.from(set)];
   }, [products]);
 
-  // ── Frequency map ───────────────────────────────────────────────────────────────
-  // Seed from localStorage so sort order is correct on the very first render.
-  // When invoices arrive from Supabase, we recompute and re-save the cache.
-  // Must use useEffect (not useState initializer) to avoid SSR hydration mismatch.
-  const [cachedFreqMap, setCachedFreqMap] = useState<Record<string, number>>({});
-
-  useEffect(() => {
-    const loaded = loadCachedFreqMap();
-    if (Object.keys(loaded).length > 0) setCachedFreqMap(loaded);
-  }, []);
-
-  const frequencyMap = useMemo(() => {
-    const map: Record<string, number> = {};
-    invoices.forEach(inv => {
-      if (inv.isSettlementReceipt) return;
-      inv.items.forEach(item => {
-        const id = item.product.id;
-        map[id] = (map[id] || 0) + item.quantity;
-      });
-    });
-    return map;
-  }, [invoices]);
-
-  // Persist updated frequency map whenever invoices change
-  useEffect(() => {
-    if (invoices.length > 0) saveFreqCache(frequencyMap);
-  }, [frequencyMap, invoices.length]);
-
-  // Use the live computed map once invoices have loaded; fall back to cache
-  // until then so the initial sort order is already correct.
-  const effectiveFreqMap = invoices.length > 0 ? frequencyMap : cachedFreqMap;
-
-  // Filter products and sort by total units sold (highest first).
+  // Filter products and sort by total units sold (itemSold descending).
   const filteredProducts = useMemo(() => {
     const searchLower = (searchTerm || '').toLowerCase().trim();
     const filtered = products.filter(product => {
@@ -183,11 +131,12 @@ export const ItemBillingSection: React.FC<ItemBillingSectionProps> = ({
         (product.subCategory && product.subCategory.toLowerCase().includes(searchLower));
       return matchesCategory && matchesSearch;
     });
-    // Sort descending by units sold — most popular always at the top
+
+    // Sort descending by itemSold from DB/state — most frequently bought items always at the top
     return [...filtered].sort(
-      (a, b) => (effectiveFreqMap[b.id] || 0) - (effectiveFreqMap[a.id] || 0)
+      (a, b) => (b.itemSold || 0) - (a.itemSold || 0)
     );
-  }, [products, selectedCategory, searchTerm, effectiveFreqMap]);
+  }, [products, selectedCategory, searchTerm]);
 
   // ── Loading state: products haven't arrived from Supabase yet ──
   const isLoading = products.length === 0;
@@ -290,7 +239,7 @@ export const ItemBillingSection: React.FC<ItemBillingSectionProps> = ({
               No products matching &quot;{searchTerm}&quot;
             </div>
           ) : (
-            filteredProducts.map((product: Product) => {
+            filteredProducts.map((product: Product, idx: number) => {
               const cartItem = cart.find(i => i.product.id === product.id);
               const isOutOfStock = product.stock <= 0;
               const isLowStock = product.stock > 0 && product.stock <= 10;
@@ -324,7 +273,13 @@ export const ItemBillingSection: React.FC<ItemBillingSectionProps> = ({
 
                     {/* Centered Product Image / Emoji Display */}
                     {product.imageUrl ? (
-                      <img src={product.imageUrl} alt={product.name} className="w-full h-full object-contain p-1 rounded-xl" />
+                      <img
+                        src={product.imageUrl}
+                        alt={product.name}
+                        loading={idx < 10 ? 'eager' : 'lazy'}
+                        decoding="async"
+                        className="w-full h-full object-contain p-1 rounded-xl"
+                      />
                     ) : (
                       <span className="text-4xl sm:text-5xl group-hover:scale-110 transition-transform duration-300 select-none filter drop-shadow-md">
                         {product.imageEmoji || '📦'}

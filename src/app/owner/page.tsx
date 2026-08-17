@@ -1,11 +1,16 @@
 'use client';
 
 import React, { useState } from 'react';
+import dynamic from 'next/dynamic';
 import { useApp } from '@/context/AppContext';
 import { Header } from '@/components/Header';
 import { OwnerDashboard } from '@/components/owner/OwnerDashboard';
-import { InvoiceModal } from '@/components/shopkeeper/InvoiceModal';
 import { Invoice } from '@/types';
+
+const InvoiceModal = dynamic(
+  () => import('@/components/shopkeeper/InvoiceModal').then(m => m.InvoiceModal),
+  { ssr: false }
+);
 
 export default function OwnerPage() {
   const { lastGeneratedInvoice, setLastGeneratedInvoice } = useApp();

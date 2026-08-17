@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS public.products (
     price NUMERIC NOT NULL DEFAULT 0,
     cost_price NUMERIC NOT NULL DEFAULT 0,
     stock INT NOT NULL DEFAULT 0,
+    item_sold INT NOT NULL DEFAULT 0,
     sku TEXT,
     unit TEXT NOT NULL DEFAULT 'Pieces',
     image_emoji TEXT DEFAULT '📦',
@@ -19,10 +20,14 @@ CREATE TABLE IF NOT EXISTS public.products (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Migration for existing database tables:
+-- ALTER TABLE public.products ADD COLUMN IF NOT EXISTS item_sold INT NOT NULL DEFAULT 0;
+
 -- Performance Indexes
 CREATE INDEX IF NOT EXISTS idx_products_category ON public.products(category);
 CREATE INDEX IF NOT EXISTS idx_products_sub_category ON public.products(sub_category);
 CREATE INDEX IF NOT EXISTS idx_products_sku ON public.products(sku);
+CREATE INDEX IF NOT EXISTS idx_products_item_sold ON public.products(item_sold DESC);
 
 -- Enable Row Level Security (RLS) & Allow Public Access
 ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;

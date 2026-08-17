@@ -6,6 +6,7 @@ export interface Product {
   price: number;
   costPrice: number;
   stock: number;
+  itemSold?: number; // Total units sold count from Product DB
   sku: string;
   unit: string;
   imageEmoji: string;

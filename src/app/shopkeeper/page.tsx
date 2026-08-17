@@ -1,13 +1,26 @@
 'use client';
 
 import React, { useState } from 'react';
+import dynamic from 'next/dynamic';
 import { useApp } from '@/context/AppContext';
 import { Header } from '@/components/Header';
 import { ItemBillingSection } from '@/components/shopkeeper/ItemBillingSection';
-import { CustomerHistorySection } from '@/components/shopkeeper/CustomerHistorySection';
-import { QuotationSection } from '@/components/shopkeeper/QuotationSection';
-import { InvoiceModal } from '@/components/shopkeeper/InvoiceModal';
 import { Invoice } from '@/types';
+
+const CustomerHistorySection = dynamic(
+  () => import('@/components/shopkeeper/CustomerHistorySection').then(m => m.CustomerHistorySection),
+  { ssr: false }
+);
+
+const QuotationSection = dynamic(
+  () => import('@/components/shopkeeper/QuotationSection').then(m => m.QuotationSection),
+  { ssr: false }
+);
+
+const InvoiceModal = dynamic(
+  () => import('@/components/shopkeeper/InvoiceModal').then(m => m.InvoiceModal),
+  { ssr: false }
+);
 
 export default function ShopkeeperPage() {
   const { lastGeneratedInvoice, setLastGeneratedInvoice } = useApp();

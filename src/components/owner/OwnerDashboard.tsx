@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useApp } from '@/context/AppContext';
 import { Invoice, Product } from '@/types';
 import {
@@ -29,21 +29,29 @@ import {
   FileCheck2,
   FileSpreadsheet,
 } from 'lucide-react';
-import {
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-  Cell,
-} from 'recharts';
-import { AddProductModal } from './AddProductModal';
-import { ManualGstModal } from './ManualGstModal';
-import { QuotationModal } from '../shopkeeper/QuotationModal';
+import dynamic from 'next/dynamic';
+
+const AddProductModal = dynamic(() => import('./AddProductModal').then(m => m.AddProductModal), { ssr: false });
+const ManualGstModal = dynamic(() => import('./ManualGstModal').then(m => m.ManualGstModal), { ssr: false });
+const QuotationModal = dynamic(() => import('../shopkeeper/QuotationModal').then(m => m.QuotationModal), { ssr: false });
+const SalesCharts = dynamic(
+  () => import('./SalesCharts').then(m => m.SalesCharts),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-pulse">
+        <div className="lg:col-span-8 bg-slate-900/60 border border-slate-800 rounded-2xl p-5 h-72 flex flex-col justify-between">
+          <div className="h-4 bg-slate-800 rounded w-1/3 mb-2" />
+          <div className="h-48 bg-slate-800/40 rounded-xl" />
+        </div>
+        <div className="lg:col-span-4 bg-slate-900/60 border border-slate-800 rounded-2xl p-5 h-72 flex flex-col justify-between">
+          <div className="h-4 bg-slate-800 rounded w-1/2 mb-2" />
+          <div className="h-48 bg-slate-800/40 rounded-xl" />
+        </div>
+      </div>
+    ),
+  }
+);
 import { Quotation } from '@/types';
 
 export const OwnerDashboard: React.FC<{ onViewInvoice: (inv: Invoice) => void }> = ({ onViewInvoice }) => {
@@ -89,119 +97,135 @@ export const OwnerDashboard: React.FC<{ onViewInvoice: (inv: Invoice) => void }>
   const [gstTimeframe, setGstTimeframe] = useState<'all' | 'fy_2026' | 'fy_2025' | 'this_month' | 'today'>('all');
   const [gstRateFilter, setGstRateFilter] = useState<string>('All');
 
-  // Key Analytics Computations
-  const totalRevenue = invoices.reduce((acc, inv) => acc + inv.totalAmount, 0);
+  // Key Analytics Computations (Memoized)
+  const totalRevenue = useMemo(() => invoices.reduce((acc, inv) => acc + inv.totalAmount, 0), [invoices]);
   const totalInvoicesCount = invoices.length;
-  const lowStockCount = products.filter(p => p.stock <= 10).length;
+  const lowStockCount = useMemo(() => products.filter(p => p.stock <= 10).length, [products]);
   const totalCustomersCount = customers.length;
-  const totalOutstandingDues = customers.reduce((acc, c) => acc + (c.totalDue || 0), 0);
+  const totalOutstandingDues = useMemo(() => customers.reduce((acc, c) => acc + (c.totalDue || 0), 0), [customers]);
 
   // Revenue chart data formatted from invoices
-  const chartData = invoices
-    .slice()
-    .reverse()
-    .map(inv => ({
-      date: new Date(inv.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric' }),
-      amount: inv.totalAmount,
-      invoiceId: inv.id,
-      customer: inv.customerName,
-    }));
+  const chartData = useMemo(() => {
+    return invoices
+      .slice()
+      .reverse()
+      .map(inv => ({
+        date: new Date(inv.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric' }),
+        amount: inv.totalAmount,
+        invoiceId: inv.id,
+        customer: inv.customerName,
+      }));
+  }, [invoices]);
 
   // Payment Method Breakdown for pie/bar chart
-  const paymentBreakdown = [
+  const paymentBreakdown = useMemo(() => [
     { name: 'UPI', count: invoices.filter(i => i.paymentMethod === 'UPI').length, color: '#10b981' },
     { name: 'Cash', count: invoices.filter(i => i.paymentMethod === 'Cash').length, color: '#f59e0b' },
     { name: 'Card', count: invoices.filter(i => i.paymentMethod === 'Card').length, color: '#6366f1' },
     { name: 'Store Credit', count: invoices.filter(i => i.paymentMethod === 'Store Credit').length, color: '#ec4899' },
-  ];
+  ], [invoices]);
 
   // Filter Invoices
-  const filteredInvoices = invoices.filter(inv => {
-    const matchesSearch =
-      inv.id.toLowerCase().includes(salesSearch.toLowerCase()) ||
-      inv.customerName.toLowerCase().includes(salesSearch.toLowerCase()) ||
-      inv.customerPhone.includes(salesSearch);
+  const filteredInvoices = useMemo(() => {
+    const sLower = salesSearch.toLowerCase().trim();
+    return invoices.filter(inv => {
+      const matchesSearch =
+        !sLower ||
+        inv.id.toLowerCase().includes(sLower) ||
+        inv.customerName.toLowerCase().includes(sLower) ||
+        inv.customerPhone.includes(sLower);
 
-    const matchesPayment = paymentFilter === 'All' || inv.paymentMethod === paymentFilter;
+      const matchesPayment = paymentFilter === 'All' || inv.paymentMethod === paymentFilter;
 
-    let matchesDate = true;
-    if (dateFilter === 'today') {
-      const todayStr = new Date().toISOString().split('T')[0];
-      matchesDate = inv.createdAt.startsWith(todayStr);
-    } else if (dateFilter === '7days') {
-      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-      matchesDate = new Date(inv.createdAt) >= sevenDaysAgo;
-    }
+      let matchesDate = true;
+      if (dateFilter === 'today') {
+        const todayStr = new Date().toISOString().split('T')[0];
+        matchesDate = inv.createdAt.startsWith(todayStr);
+      } else if (dateFilter === '7days') {
+        const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+        matchesDate = new Date(inv.createdAt) >= sevenDaysAgo;
+      }
 
-    return matchesSearch && matchesPayment && matchesDate;
-  });
+      return matchesSearch && matchesPayment && matchesDate;
+    });
+  }, [invoices, salesSearch, paymentFilter, dateFilter]);
 
   // Filter Inventory
-  const categoriesList = ['All', ...Array.from(new Set(products.map(p => p.category)))];
-  const filteredProducts = products.filter(p => {
-    const matchesCat = inventoryCategory === 'All' || p.category === inventoryCategory;
-    const matchesSearch =
-      p.name.toLowerCase().includes(inventorySearch.toLowerCase()) ||
-      p.sku.toLowerCase().includes(inventorySearch.toLowerCase());
+  const categoriesList = useMemo(() => ['All', ...Array.from(new Set(products.map(p => p.category)))], [products]);
+  const filteredProducts = useMemo(() => {
+    const sLower = inventorySearch.toLowerCase().trim();
+    return products.filter(p => {
+      const matchesCat = inventoryCategory === 'All' || p.category === inventoryCategory;
+      const matchesSearch =
+        !sLower ||
+        p.name.toLowerCase().includes(sLower) ||
+        p.sku.toLowerCase().includes(sLower);
 
-    let matchesStock = true;
-    if (inventoryStockFilter === 'low_stock') {
-      matchesStock = p.stock <= 10;
-    } else if (inventoryStockFilter === 'out_of_stock') {
-      matchesStock = p.stock === 0;
-    } else if (inventoryStockFilter === 'in_stock') {
-      matchesStock = p.stock > 10;
-    }
+      let matchesStock = true;
+      if (inventoryStockFilter === 'low_stock') {
+        matchesStock = p.stock <= 10;
+      } else if (inventoryStockFilter === 'out_of_stock') {
+        matchesStock = p.stock === 0;
+      } else if (inventoryStockFilter === 'in_stock') {
+        matchesStock = p.stock > 10;
+      }
 
-    return matchesCat && matchesSearch && matchesStock;
-  });
+      return matchesCat && matchesSearch && matchesStock;
+    });
+  }, [products, inventoryCategory, inventorySearch, inventoryStockFilter]);
 
   // Filter Customers
-  const filteredCustomers = customers.filter(c => {
-    return (
-      c.name.toLowerCase().includes(customerSearch.toLowerCase()) ||
-      c.phone.includes(customerSearch) ||
-      c.address.toLowerCase().includes(customerSearch.toLowerCase())
+  const filteredCustomers = useMemo(() => {
+    const sLower = customerSearch.toLowerCase().trim();
+    if (!sLower) return customers;
+    return customers.filter(c =>
+      c.name.toLowerCase().includes(sLower) ||
+      c.phone.includes(sLower) ||
+      c.address.toLowerCase().includes(sLower)
     );
-  });
+  }, [customers, customerSearch]);
 
   // Filter GST Invoices & Financial Year Computations
-  const filteredGstInvoices = invoices.filter(inv => {
-    const isGst = inv.isGstInvoice || inv.taxRate > 0;
-    if (!isGst) return false;
+  const filteredGstInvoices = useMemo(() => {
+    const sLower = gstSearch.toLowerCase().trim();
+    return invoices.filter(inv => {
+      const isGst = inv.isGstInvoice || inv.taxRate > 0;
+      if (!isGst) return false;
 
-    const matchesSearch =
-      inv.id.toLowerCase().includes(gstSearch.toLowerCase()) ||
-      inv.customerName.toLowerCase().includes(gstSearch.toLowerCase()) ||
-      inv.customerPhone.includes(gstSearch) ||
-      (inv.customerGstin && inv.customerGstin.toLowerCase().includes(gstSearch.toLowerCase()));
+      const matchesSearch =
+        !sLower ||
+        inv.id.toLowerCase().includes(sLower) ||
+        inv.customerName.toLowerCase().includes(sLower) ||
+        inv.customerPhone.includes(sLower) ||
+        (inv.customerGstin && inv.customerGstin.toLowerCase().includes(sLower));
 
-    const matchesRate = gstRateFilter === 'All' || inv.taxRate === Number(gstRateFilter);
+      const matchesRate = gstRateFilter === 'All' || inv.taxRate === Number(gstRateFilter);
 
-    let matchesTimeframe = true;
-    const invDate = new Date(inv.createdAt);
-    if (gstTimeframe === 'fy_2026') {
-      const fyStart = new Date('2026-04-01');
-      const fyEnd = new Date('2027-03-31T23:59:59');
-      matchesTimeframe = invDate >= fyStart && invDate <= fyEnd;
-    } else if (gstTimeframe === 'fy_2025') {
-      const fyStart = new Date('2025-04-01');
-      const fyEnd = new Date('2026-03-31T23:59:59');
-      matchesTimeframe = invDate >= fyStart && invDate <= fyEnd;
-    } else if (gstTimeframe === 'this_month') {
-      matchesTimeframe =
-        invDate.getMonth() === new Date().getMonth() &&
-        invDate.getFullYear() === new Date().getFullYear();
-    } else if (gstTimeframe === 'today') {
-      const todayStr = new Date().toISOString().split('T')[0];
-      matchesTimeframe = inv.createdAt.startsWith(todayStr);
-    }
+      let matchesTimeframe = true;
+      const invDate = new Date(inv.createdAt);
+      if (gstTimeframe === 'fy_2026') {
+        const fyStart = new Date('2026-04-01');
+        const fyEnd = new Date('2027-03-31T23:59:59');
+        matchesTimeframe = invDate >= fyStart && invDate <= fyEnd;
+      } else if (gstTimeframe === 'fy_2025') {
+        const fyStart = new Date('2025-04-01');
+        const fyEnd = new Date('2026-03-31T23:59:59');
+        matchesTimeframe = invDate >= fyStart && invDate <= fyEnd;
+      } else if (gstTimeframe === 'this_month') {
+        matchesTimeframe =
+          invDate.getMonth() === new Date().getMonth() &&
+          invDate.getFullYear() === new Date().getFullYear();
+      } else if (gstTimeframe === 'today') {
+        const todayStr = new Date().toISOString().split('T')[0];
+        matchesTimeframe = inv.createdAt.startsWith(todayStr);
+      }
 
-    return matchesSearch && matchesRate && matchesTimeframe;
-  });
+      return matchesSearch && matchesRate && matchesTimeframe;
+    });
+  }, [invoices, gstSearch, gstRateFilter, gstTimeframe]);
 
-  const totalGstTaxableValue = filteredGstInvoices.reduce((sum, i) => sum + i.subtotal, 0);
-  const totalGstTaxCollected = filteredGstInvoices.reduce((sum, i) => sum + i.taxAmount, 0);
+  const totalGstTaxableValue = useMemo(() => filteredGstInvoices.reduce((sum, i) => sum + i.subtotal, 0), [filteredGstInvoices]);
+  const totalGstTaxCollected = useMemo(() => filteredGstInvoices.reduce((sum, i) => sum + i.taxAmount, 0), [filteredGstInvoices]);
 
   return (
     <div className="space-y-6">
@@ -409,87 +433,7 @@ export const OwnerDashboard: React.FC<{ onViewInvoice: (inv: Invoice) => void }>
 
       {/* TAB 1: ANALYTICS & CHARTS */}
       {activeTab === 'analytics' && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          
-          {/* Revenue Over Time Chart */}
-          <div className="lg:col-span-8 bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="font-bold text-white text-base">Sales Revenue Growth</h3>
-                <p className="text-xs text-slate-400">Transaction amounts over time</p>
-              </div>
-              <span className="text-xs bg-indigo-500/10 text-indigo-400 px-3 py-1 rounded-lg border border-indigo-500/20 font-mono">
-                Live Data
-              </span>
-            </div>
-
-            <div className="h-64 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chartData}>
-                  <defs>
-                    <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#6366f1" stopOpacity={0.4} />
-                      <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                  <XAxis dataKey="date" stroke="#64748b" fontSize={11} />
-                  <YAxis stroke="#64748b" fontSize={11} tickFormatter={val => `₹${val}`} />
-                  <Tooltip
-                    contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '12px', fontSize: '12px' }}
-                    labelStyle={{ color: '#94a3b8' }}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="amount"
-                    stroke="#6366f1"
-                    strokeWidth={3}
-                    fillOpacity={1}
-                    fill="url(#colorRevenue)"
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          {/* Payment Method Distribution */}
-          <div className="lg:col-span-4 bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl flex flex-col justify-between">
-            <div>
-              <h3 className="font-bold text-white text-base mb-1">Payment Modes Breakdown</h3>
-              <p className="text-xs text-slate-400 mb-4">Distribution by customer preference</p>
-
-              <div className="h-44 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={paymentBreakdown}>
-                    <XAxis dataKey="name" stroke="#64748b" fontSize={11} />
-                    <YAxis stroke="#64748b" fontSize={11} allowDecimals={false} />
-                    <Tooltip
-                      contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '8px', fontSize: '12px' }}
-                    />
-                    <Bar dataKey="count" radius={[6, 6, 0, 0]}>
-                      {paymentBreakdown.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2 mt-2 pt-3 border-t border-slate-800 text-xs">
-              {paymentBreakdown.map(p => (
-                <div key={p.name} className="flex items-center justify-between p-2 rounded-lg bg-slate-950 border border-slate-800">
-                  <span className="flex items-center gap-1.5 text-slate-300">
-                    <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: p.color }} />
-                    {p.name}
-                  </span>
-                  <span className="font-bold text-white font-mono">{p.count}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-        </div>
+        <SalesCharts chartData={chartData} paymentBreakdown={paymentBreakdown} />
       )}
 
       {/* TAB 2: FILTERABLE SALES HISTORY */}

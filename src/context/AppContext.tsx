@@ -15,6 +15,7 @@ function mapDbProduct(row: any): Product {
     price: Number(row.price) || 0,
     costPrice: Number(row.cost_price) || 0,
     stock: Number(row.stock) || 0,
+    itemSold: Number(row.item_sold ?? row.items_sold ?? 0),
     sku: row.sku || '',
     unit: row.unit || 'Pieces',
     imageEmoji: row.image_emoji || '📦',
@@ -32,6 +33,7 @@ function mapProductToDb(p: Omit<Product, 'id'> & { id?: string }) {
     price: p.price,
     cost_price: p.costPrice,
     stock: p.stock,
+    item_sold: p.itemSold || 0,
     sku: p.sku || null,
     unit: p.unit,
     image_emoji: p.imageEmoji || '📦',
@@ -253,45 +255,11 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-const LOCAL_STORAGE_PREFIX = 'gol_building_materials_v9_';
-const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
-
-// ── Generic cache helpers ──────────────────────────────────────────────────────────
-function loadCache<T>(key: string): T[] {
-  if (typeof window === 'undefined') return [];
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return [];
-    const { ts, data } = JSON.parse(raw) as { ts: number; data: T[] };
-    if (Date.now() - ts > CACHE_TTL_MS) return [];
-    return Array.isArray(data) ? data : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveCache<T>(key: string, data: T[]) {
-  try {
-    localStorage.setItem(key, JSON.stringify({ ts: Date.now(), data }));
-  } catch {}
-}
-
-const PRODUCTS_CACHE_KEY   = `${LOCAL_STORAGE_PREFIX}products_cache`;
-const CUSTOMERS_CACHE_KEY  = `${LOCAL_STORAGE_PREFIX}customers_cache`;
-const INVOICES_CACHE_KEY   = `${LOCAL_STORAGE_PREFIX}invoices_cache`;
-const QUOTATIONS_CACHE_KEY = `${LOCAL_STORAGE_PREFIX}quotations_cache`;
-const THEME_CACHE_KEY      = `${LOCAL_STORAGE_PREFIX}theme_preference`;
-
-const loadCachedProducts   = () => loadCache<Product>(PRODUCTS_CACHE_KEY);
-const loadCachedCustomers  = () => loadCache<Customer>(CUSTOMERS_CACHE_KEY);
-const loadCachedInvoices   = () => loadCache<Invoice>(INVOICES_CACHE_KEY);
-const loadCachedQuotations = () => loadCache<Quotation>(QUOTATIONS_CACHE_KEY);
+import { CacheManager, initMemoryCache } from '@/lib/cacheManager';
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [activeRole, setActiveRole] = useState<UserRole>('shopkeeper');
   const [isMounted, setIsMounted] = useState<boolean>(false);
-  // Start with empty array (same on server + client) to avoid hydration mismatch.
-  // The localStorage cache is applied in a useEffect below (client-only).
   const [products, setProducts] = useState<Product[]>(initialProducts);
   const [customers, setCustomers] = useState<Customer[]>(initialCustomers);
   const [invoices, setInvoices] = useState<Invoice[]>(initialInvoices);
@@ -308,110 +276,157 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [cart, setCart] = useState<CartItem[]>([]);
   const [lastGeneratedInvoice, setLastGeneratedInvoice] = useState<Invoice | null>(null);
 
-  // Client mount effect — runs only on the client after hydration succeeds.
-  // Populate all four tables from their localStorage caches immediately so the
-  // owner dashboard (and shopkeeper catalog) appear before Supabase responds.
+  // ── Step 1: Immediate Synchronous Cache Hydration (0ms Latency) ──────────────
   useEffect(() => {
     setIsMounted(true);
-    const cp = loadCachedProducts();   if (cp.length > 0)  setProducts(cp);
-    const cc = loadCachedCustomers();  if (cc.length > 0)  setCustomers(cc);
-    const ci = loadCachedInvoices();   if (ci.length > 0)  setInvoices(ci);
-    const cq = loadCachedQuotations(); if (cq.length > 0)  setQuotations(cq);
-
-    try {
-      const savedTheme = localStorage.getItem(THEME_CACHE_KEY) as 'dark' | 'light' | null;
-      if (savedTheme === 'dark' || savedTheme === 'light') {
-        setTheme(savedTheme);
-      }
-    } catch {}
+    const store = initMemoryCache();
+    if (store.products.length > 0) setProducts(store.products);
+    if (store.customers.length > 0) setCustomers(store.customers);
+    if (store.invoices.length > 0) setInvoices(store.invoices);
+    if (store.quotations.length > 0) setQuotations(store.quotations);
+    setTheme(CacheManager.getTheme());
   }, []);
 
-  // Supabase Cloud PostgreSQL Real-time Synchronization (when configured)
+  // ── Step 2: Intelligent Priority Data Loading Pipeline ────────────────────────
   useEffect(() => {
     if (!isSupabaseConfigured || !supabase) return;
     const sb = supabase;
 
-    // ── Step 1: Fetch PRODUCTS first, independently ──────────────────────────
-    // Cached products are already in state (instant). Fetch from DB in the
-    // background, update state + cache only if the data actually changed.
-    sb.from('products')
-      .select('id,name,category,sub_category,price,cost_price,stock,sku,unit,image_emoji,image_url,created_at')
-      .order('created_at', { ascending: false })
-      .then(({ data, error }) => {
-        if (data && !error && data.length > 0) {
-          const mapped = data.map(mapDbProduct);
-          setProducts(mapped);
-          saveCache(PRODUCTS_CACHE_KEY, mapped); // keep cache warm for next visit
-        }
-      });
+    const pathname = typeof window !== 'undefined' ? window.location.pathname : '';
+    const isShopkeeper = pathname.includes('shopkeeper') || pathname === '/';
 
-    // ── Step 2: Fetch remaining tables in parallel, AFTER products kick off ──
-    // Invoices: only fetch columns needed for display + frequency computation.
-    // Omitting heavy unused columns cuts payload significantly.
-    sb.from('customers')
-      .select('id,phone,name,address,registered_at,total_purchases,total_spent,total_due')
-      .order('created_at', { ascending: false })
-      .then(({ data, error }) => {
-        if (data && !error && data.length > 0) {
-          const mapped = data.map(mapDbCustomer);
-          setCustomers(mapped);
-          saveCache(CUSTOMERS_CACHE_KEY, mapped);
-        }
-      });
+    const loadPriorityPipeline = async () => {
+      if (isShopkeeper) {
+        // ★ TIER 1 PRIORITY (SHOPKEEPER): Instant Product Catalog + Customer Directory
+        try {
+          const [prodRes, custRes] = await Promise.allSettled([
+            sb.from('products')
+              .select('id,name,category,sub_category,price,cost_price,stock,sku,unit,image_emoji,image_url,created_at')
+              .order('created_at', { ascending: false }),
+            sb.from('customers')
+              .select('id,phone,name,address,registered_at,total_purchases,total_spent,total_due')
+              .order('created_at', { ascending: false }),
+          ]);
 
-    sb.from('invoices')
-      .select('id,customer_phone,customer_name,customer_address,customer_gstin,items,subtotal,tax_rate,tax_amount,cgst_amount,sgst_amount,discount,total_amount,amount_paid,due_amount,payment_method,payment_status,is_settlement_receipt,is_gst_invoice,previous_due,status,created_at')
-      .order('created_at', { ascending: false })
-      .then(({ data, error }) => {
-        if (data && !error && data.length > 0) {
-          const mapped = data.map(mapDbInvoice);
-          setInvoices(mapped);
-          saveCache(INVOICES_CACHE_KEY, mapped);
+          if (prodRes.status === 'fulfilled' && prodRes.value.data && !prodRes.value.error) {
+            const mapped = prodRes.value.data.map(mapDbProduct);
+            setProducts(mapped);
+            CacheManager.setProducts(mapped);
+          }
+          if (custRes.status === 'fulfilled' && custRes.value.data && !custRes.value.error) {
+            const mapped = custRes.value.data.map(mapDbCustomer);
+            setCustomers(mapped);
+            CacheManager.setCustomers(mapped);
+          }
+        } catch (e) {
+          console.warn('Priority Tier 1 sync error:', e);
         }
-      });
 
-    sb.from('quotations')
-      .select('id,customer_name,customer_phone,customer_address,notes,items,subtotal,tax_rate,tax_amount,discount,total_amount,created_at,valid_until,status,is_targeted,owner_call_log')
-      .order('created_at', { ascending: false })
-      .then(({ data, error }) => {
-        if (data && !error && data.length > 0) {
-          const mapped = data.map(mapDbQuotation);
-          setQuotations(mapped);
-          saveCache(QUOTATIONS_CACHE_KEY, mapped);
+        // ★ TIER 2 PRIORITY (SHOPKEEPER): Deferred Invoices & Quotations in idle frame
+        setTimeout(async () => {
+          try {
+            const [invRes, quotRes] = await Promise.allSettled([
+              sb.from('invoices')
+                .select('id,customer_phone,customer_name,customer_address,customer_gstin,items,subtotal,tax_rate,tax_amount,cgst_amount,sgst_amount,discount,total_amount,amount_paid,due_amount,payment_method,payment_status,is_settlement_receipt,is_gst_invoice,previous_due,status,created_at')
+                .order('created_at', { ascending: false }),
+              sb.from('quotations')
+                .select('id,customer_name,customer_phone,customer_address,notes,items,subtotal,tax_rate,tax_amount,discount,total_amount,created_at,valid_until,status,is_targeted,owner_call_log')
+                .order('created_at', { ascending: false }),
+            ]);
+            if (invRes.status === 'fulfilled' && invRes.value.data && !invRes.value.error) {
+              const mapped = invRes.value.data.map(mapDbInvoice);
+              setInvoices(mapped);
+              CacheManager.setInvoices(mapped);
+            }
+            if (quotRes.status === 'fulfilled' && quotRes.value.data && !quotRes.value.error) {
+              const mapped = quotRes.value.data.map(mapDbQuotation);
+              setQuotations(mapped);
+              CacheManager.setQuotations(mapped);
+            }
+          } catch (e) {}
+        }, 150);
+
+      } else {
+        // ★ TIER 1 PRIORITY (OWNER): Key Sales KPI Invoices + Inventory Overview + Customer Dues
+        try {
+          const [invRes, prodRes, custRes] = await Promise.allSettled([
+            sb.from('invoices')
+              .select('id,customer_phone,customer_name,customer_address,customer_gstin,items,subtotal,tax_rate,tax_amount,cgst_amount,sgst_amount,discount,total_amount,amount_paid,due_amount,payment_method,payment_status,is_settlement_receipt,is_gst_invoice,previous_due,status,created_at')
+              .order('created_at', { ascending: false }),
+            sb.from('products')
+              .select('id,name,category,sub_category,price,cost_price,stock,sku,unit,image_emoji,image_url,created_at')
+              .order('created_at', { ascending: false }),
+            sb.from('customers')
+              .select('id,phone,name,address,registered_at,total_purchases,total_spent,total_due')
+              .order('created_at', { ascending: false }),
+          ]);
+
+          if (invRes.status === 'fulfilled' && invRes.value.data && !invRes.value.error) {
+            const mapped = invRes.value.data.map(mapDbInvoice);
+            setInvoices(mapped);
+            CacheManager.setInvoices(mapped);
+          }
+          if (prodRes.status === 'fulfilled' && prodRes.value.data && !prodRes.value.error) {
+            const mapped = prodRes.value.data.map(mapDbProduct);
+            setProducts(mapped);
+            CacheManager.setProducts(mapped);
+          }
+          if (custRes.status === 'fulfilled' && custRes.value.data && !custRes.value.error) {
+            const mapped = custRes.value.data.map(mapDbCustomer);
+            setCustomers(mapped);
+            CacheManager.setCustomers(mapped);
+          }
+        } catch (e) {
+          console.warn('Owner Tier 1 sync error:', e);
         }
-      });
 
-    // ── Step 3: Real-time subscriptions ──────────────────────────────────────
-    // Patch individual rows in-place; also keep caches warm so the next
-    // page load is instant even after a real-time update.
+        // ★ TIER 2 PRIORITY (OWNER): Deferred Quotation Leads CRM
+        setTimeout(async () => {
+          try {
+            const quotRes = await sb.from('quotations')
+              .select('id,customer_name,customer_phone,customer_address,notes,items,subtotal,tax_rate,tax_amount,discount,total_amount,created_at,valid_until,status,is_targeted,owner_call_log')
+              .order('created_at', { ascending: false });
+            if (quotRes.data && !quotRes.error) {
+              const mapped = quotRes.data.map(mapDbQuotation);
+              setQuotations(mapped);
+              CacheManager.setQuotations(mapped);
+            }
+          } catch (e) {}
+        }, 150);
+      }
+    };
+
+    loadPriorityPipeline();
+
+    // ── Real-time Subscriptions (Syncs rows in-place) ──────────────────────────
     const channel = sb
       .channel('public:db-changes')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'products' }, ({ new: row }) => {
-        if (row) setProducts(prev => { const n = [mapDbProduct(row), ...prev]; saveCache(PRODUCTS_CACHE_KEY, n); return n; });
+        if (row) setProducts(prev => { const n = [mapDbProduct(row), ...prev]; CacheManager.setProducts(n); return n; });
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'products' }, ({ new: row }) => {
-        if (row) setProducts(prev => { const n = prev.map(p => p.id === row.id ? mapDbProduct(row) : p); saveCache(PRODUCTS_CACHE_KEY, n); return n; });
+        if (row) setProducts(prev => { const n = prev.map(p => p.id === row.id ? mapDbProduct(row) : p); CacheManager.setProducts(n); return n; });
       })
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'products' }, ({ old: row }) => {
-        if (row) setProducts(prev => { const n = prev.filter(p => p.id !== row.id); saveCache(PRODUCTS_CACHE_KEY, n); return n; });
+        if (row) setProducts(prev => { const n = prev.filter(p => p.id !== row.id); CacheManager.setProducts(n); return n; });
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'customers' }, ({ new: row }) => {
-        if (row) setCustomers(prev => { const n = [mapDbCustomer(row), ...prev]; saveCache(CUSTOMERS_CACHE_KEY, n); return n; });
+        if (row) setCustomers(prev => { const n = [mapDbCustomer(row), ...prev]; CacheManager.setCustomers(n); return n; });
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'customers' }, ({ new: row }) => {
-        if (row) setCustomers(prev => { const n = prev.map(c => c.id === row.id ? mapDbCustomer(row) : c); saveCache(CUSTOMERS_CACHE_KEY, n); return n; });
+        if (row) setCustomers(prev => { const n = prev.map(c => c.id === row.id ? mapDbCustomer(row) : c); CacheManager.setCustomers(n); return n; });
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'invoices' }, ({ new: row }) => {
-        if (row) setInvoices(prev => { const n = [mapDbInvoice(row), ...prev]; saveCache(INVOICES_CACHE_KEY, n); return n; });
+        if (row) setInvoices(prev => { const n = [mapDbInvoice(row), ...prev]; CacheManager.setInvoices(n); return n; });
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'invoices' }, ({ new: row }) => {
-        if (row) setInvoices(prev => { const n = prev.map(inv => inv.id === row.id ? mapDbInvoice(row) : inv); saveCache(INVOICES_CACHE_KEY, n); return n; });
+        if (row) setInvoices(prev => { const n = prev.map(inv => inv.id === row.id ? mapDbInvoice(row) : inv); CacheManager.setInvoices(n); return n; });
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'quotations' }, ({ new: row }) => {
-        if (row) setQuotations(prev => { const n = [mapDbQuotation(row), ...prev]; saveCache(QUOTATIONS_CACHE_KEY, n); return n; });
+        if (row) setQuotations(prev => { const n = [mapDbQuotation(row), ...prev]; CacheManager.setQuotations(n); return n; });
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'quotations' }, ({ new: row }) => {
-        if (row) setQuotations(prev => { const n = prev.map(q => q.id === row.id ? mapDbQuotation(row) : q); saveCache(QUOTATIONS_CACHE_KEY, n); return n; });
+        if (row) setQuotations(prev => { const n = prev.map(q => q.id === row.id ? mapDbQuotation(row) : q); CacheManager.setQuotations(n); return n; });
       })
       .subscribe();
 
@@ -420,23 +435,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   }, []);
 
-  // Sync theme state to the <html> element so CSS light-mode overrides activate
+  // Sync theme state to <html> element
   useEffect(() => {
     if (theme === 'light') {
       document.documentElement.classList.add('light-mode');
     } else {
       document.documentElement.classList.remove('light-mode');
     }
-    try {
-      localStorage.setItem(THEME_CACHE_KEY, theme);
-    } catch {}
+    CacheManager.setTheme(theme);
   }, [theme]);
 
   const toggleTheme = () => {
     setTheme(prev => (prev === 'dark' ? 'light' : 'dark'));
   };
 
-  // Phone Lookup Logic
+  // Fast O(1) Phone Lookup Logic
   const lookupCustomerByPhone = (phoneInput: string) => {
     const cleanPhone = phoneInput.trim().replace(/\D/g, '');
     setPhoneSearchTerm(cleanPhone);
@@ -448,7 +461,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return;
     }
 
-    const found = customers.find(c => c.phone.replace(/\D/g, '') === cleanPhone);
+    // Fast indexed Map lookup (O(1)) with fallback to state array
+    const indexed = CacheManager.lookupCustomerByPhone(cleanPhone);
+    const found = indexed || customers.find(c => c.phone.replace(/\D/g, '') === cleanPhone) || null;
 
     if (found) {
       setActiveCustomer(found);
@@ -493,9 +508,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           } else if (data?.id) {
             // Patch local state with the real UUID so future upserts work correctly
             const realId = data.id;
-            setCustomers(prev => prev.map(c => c.id === tempId ? { ...c, id: realId } : c));
+            setCustomers(prev => {
+              const updated = prev.map(c => c.id === tempId ? { ...c, id: realId } : c);
+              CacheManager.setCustomers(updated);
+              return updated;
+            });
             setActiveCustomer(prev => prev?.id === tempId ? { ...prev, id: realId } : prev);
-            saveCache(CUSTOMERS_CACHE_KEY, []);  // invalidate customer cache so next load re-fetches
           }
         });
     }
@@ -594,7 +612,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setInvoices(prev => {
       const updated = [newInvoice, ...prev];
-      saveCache(INVOICES_CACHE_KEY, updated);
+      CacheManager.setInvoices(updated);
       return updated;
     });
 
@@ -602,11 +620,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const updated = prevProducts.map(p => {
         const cartItem = validItems.find(c => c.product.id === p.id);
         if (cartItem) {
-          return { ...p, stock: Math.max(0, p.stock - cartItem.quantity) };
+          return {
+            ...p,
+            stock: Math.max(0, p.stock - cartItem.quantity),
+            itemSold: (p.itemSold || 0) + cartItem.quantity,
+          };
         }
         return p;
       });
-      saveCache(PRODUCTS_CACHE_KEY, updated);
+      CacheManager.setProducts(updated);
       return updated;
     });
 
@@ -638,7 +660,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } else {
         updatedList = [updatedCustomerState, ...prevCustomers];
       }
-      saveCache(CUSTOMERS_CACHE_KEY, updatedList);
+      CacheManager.setCustomers(updatedList);
       return updatedList;
     });
 
@@ -661,12 +683,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         });
       });
 
-      // 3. Decrement Product Stock levels
+      // 3. Decrement Product Stock levels & increment item_sold count
       validItems.forEach(cartItem => {
         const targetProd = products.find(p => p.id === cartItem.product.id);
         if (targetProd) {
           const newStock = Math.max(0, targetProd.stock - cartItem.quantity);
-          sb.from('products').update({ stock: newStock }).eq('id', targetProd.id).then();
+          const newItemSold = (targetProd.itemSold || 0) + cartItem.quantity;
+          
+          sb.from('products')
+            .update({ stock: newStock, item_sold: newItemSold })
+            .eq('id', targetProd.id)
+            .then(({ error }) => {
+              if (error) {
+                // In case the DB column hasn't been added yet, fallback to stock update
+                sb.from('products').update({ stock: newStock }).eq('id', targetProd.id).then();
+              }
+            });
         }
       });
     }
@@ -740,7 +772,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setInvoices(prev => {
       const updated = [newInvoice, ...prev];
-      saveCache(INVOICES_CACHE_KEY, updated);
+      CacheManager.setInvoices(updated);
       return updated;
     });
 
@@ -748,7 +780,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const updated = prevCustomers.map(c =>
         c.phone.replace(/\D/g, '') === cust.phone.replace(/\D/g, '') ? updatedCustState : c
       );
-      saveCache(CUSTOMERS_CACHE_KEY, updated);
+      CacheManager.setCustomers(updated);
       return updated;
     });
 
@@ -761,12 +793,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Sync to Supabase Cloud PostgreSQL
     if (isSupabaseConfigured && supabase) {
       const sb = supabase;
-      // invoice.due_amount = remaining balance after payment (for accurate receipt and history queries)
-      // invoice.previous_due = customer's balance before this payment
       sb.from('invoices').insert(mapInvoiceToDb(newInvoice)).then(({ error }) => {
         if (error) console.error('Supabase settlement invoice error:', error);
       });
-      // customers.total_due = newRemainingDue (updated balance after payment)
       sb.from('customers').upsert(mapCustomerToDb(updatedCustState)).then(({ error }) => {
         if (error) console.error('Supabase customer due update error:', error);
       });
@@ -849,13 +878,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setInvoices(prev => {
       const updated = [newInvoice, ...prev];
-      saveCache(INVOICES_CACHE_KEY, updated);
+      CacheManager.setInvoices(updated);
       return updated;
     });
 
-    // Build the updated customer record synchronously so we can upsert it to
-    // Supabase reliably (setCustomers is async; reading targetCust from inside
-    // the callback is a race condition).
     const existingCust = customers.find(c => c.phone === data.customerPhone);
     let finalCustState: Customer;
     if (existingCust) {
@@ -882,7 +908,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const idx = prevCustomers.findIndex(c => c.phone === data.customerPhone);
       let next: Customer[];
       if (idx !== -1) {
-        // Recompute from the freshest row to avoid stale-snapshot accumulation
         const fresh = prevCustomers[idx];
         const freshUpdated: Customer = {
           ...fresh,
@@ -895,7 +920,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } else {
         next = [finalCustState, ...prevCustomers];
       }
-      saveCache(CUSTOMERS_CACHE_KEY, next);
+      CacheManager.setCustomers(next);
       return next;
     });
 
@@ -904,7 +929,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Sync to Supabase Cloud PostgreSQL
     if (isSupabaseConfigured && supabase) {
       supabase.from('invoices').insert(mapInvoiceToDb(newInvoice)).then();
-      // Use the synchronously computed finalCustState — no race condition
       supabase.from('customers').upsert(mapCustomerToDb(finalCustState)).then();
     }
 
@@ -954,9 +978,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       status: 'Pending Follow-up',
     };
 
-    setQuotations(prev => [newQuotation, ...prev]);
+    setQuotations(prev => {
+      const updated = [newQuotation, ...prev];
+      CacheManager.setQuotations(updated);
+      return updated;
+    });
 
-    // Sync to Supabase Cloud PostgreSQL
     if (isSupabaseConfigured && supabase) {
       supabase.from('quotations').insert(mapQuotationToDb(newQuotation)).then();
     }
@@ -965,8 +992,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateQuotationStatus = (id: string, newStatus: QuotationStatus, ownerNotes?: string) => {
-    setQuotations(prev =>
-      prev.map(q => {
+    setQuotations(prev => {
+      const updatedList = prev.map(q => {
         if (q.id === id) {
           const updated = {
             ...q,
@@ -984,13 +1011,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           return updated;
         }
         return q;
-      })
-    );
+      });
+      CacheManager.setQuotations(updatedList);
+      return updatedList;
+    });
   };
 
   const toggleQuotationTargeted = (id: string, isTargeted: boolean) => {
-    setQuotations(prev =>
-      prev.map(q => {
+    setQuotations(prev => {
+      const updatedList = prev.map(q => {
         if (q.id === id) {
           const updated = { ...q, isTargeted };
           if (isSupabaseConfigured && supabase) {
@@ -999,8 +1028,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           return updated;
         }
         return q;
-      })
-    );
+      });
+      CacheManager.setQuotations(updatedList);
+      return updatedList;
+    });
   };
 
   // Owner Product Actions (Adds items directly to central products array & Supabase Cloud)
@@ -1009,7 +1040,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ...productData,
       id: `p-${Date.now()}`,
     };
-    setProducts(prev => [newProd, ...prev]);
+    setProducts(prev => {
+      const updated = [newProd, ...prev];
+      CacheManager.setProducts(updated);
+      return updated;
+    });
 
     if (isSupabaseConfigured && supabase) {
       supabase.from('products').insert(mapProductToDb(newProd)).then(({ error }) => {
@@ -1024,7 +1059,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ...data,
       id: `p-${now}-${idx}`,
     }));
-    setProducts(prev => [...newProds, ...prev]);
+    setProducts(prev => {
+      const updated = [...newProds, ...prev];
+      CacheManager.setProducts(updated);
+      return updated;
+    });
 
     if (isSupabaseConfigured && supabase) {
       supabase.from('products').insert(newProds.map(mapProductToDb)).then(({ error }) => {
@@ -1035,9 +1074,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const updateProductStock = (productId: string, newStock: number) => {
     const validStock = Math.max(0, newStock);
-    setProducts(prev =>
-      prev.map(p => (p.id === productId ? { ...p, stock: validStock } : p))
-    );
+    setProducts(prev => {
+      const updated = prev.map(p => (p.id === productId ? { ...p, stock: validStock } : p));
+      CacheManager.setProducts(updated);
+      return updated;
+    });
 
     if (isSupabaseConfigured && supabase) {
       supabase.from('products').update({ stock: validStock }).eq('id', productId).then();
@@ -1046,9 +1087,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const updateProductPrice = (productId: string, newPrice: number) => {
     const validPrice = Math.max(0, newPrice);
-    setProducts(prev =>
-      prev.map(p => (p.id === productId ? { ...p, price: validPrice } : p))
-    );
+    setProducts(prev => {
+      const updated = prev.map(p => (p.id === productId ? { ...p, price: validPrice } : p));
+      CacheManager.setProducts(updated);
+      return updated;
+    });
 
     if (isSupabaseConfigured && supabase) {
       supabase.from('products').update({ price: validPrice }).eq('id', productId).then();
@@ -1056,7 +1099,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const deleteProduct = (productId: string) => {
-    setProducts(prev => prev.filter(p => p.id !== productId));
+    setProducts(prev => {
+      const updated = prev.filter(p => p.id !== productId);
+      CacheManager.setProducts(updated);
+      return updated;
+    });
     setCart(prev => prev.filter(item => item.product.id !== productId));
 
     if (isSupabaseConfigured && supabase) {
