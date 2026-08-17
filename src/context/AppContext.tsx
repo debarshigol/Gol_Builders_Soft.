@@ -280,6 +280,7 @@ const PRODUCTS_CACHE_KEY   = `${LOCAL_STORAGE_PREFIX}products_cache`;
 const CUSTOMERS_CACHE_KEY  = `${LOCAL_STORAGE_PREFIX}customers_cache`;
 const INVOICES_CACHE_KEY   = `${LOCAL_STORAGE_PREFIX}invoices_cache`;
 const QUOTATIONS_CACHE_KEY = `${LOCAL_STORAGE_PREFIX}quotations_cache`;
+const THEME_CACHE_KEY      = `${LOCAL_STORAGE_PREFIX}theme_preference`;
 
 const loadCachedProducts   = () => loadCache<Product>(PRODUCTS_CACHE_KEY);
 const loadCachedCustomers  = () => loadCache<Customer>(CUSTOMERS_CACHE_KEY);
@@ -295,7 +296,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [customers, setCustomers] = useState<Customer[]>(initialCustomers);
   const [invoices, setInvoices] = useState<Invoice[]>(initialInvoices);
   const [quotations, setQuotations] = useState<Quotation[]>(initialQuotations);
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+  const [theme, setTheme] = useState<'dark' | 'light'>('light');
 
   // Billing Flow States
   const [phoneSearchTerm, setPhoneSearchTerm] = useState<string>('');
@@ -316,6 +317,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const cc = loadCachedCustomers();  if (cc.length > 0)  setCustomers(cc);
     const ci = loadCachedInvoices();   if (ci.length > 0)  setInvoices(ci);
     const cq = loadCachedQuotations(); if (cq.length > 0)  setQuotations(cq);
+
+    try {
+      const savedTheme = localStorage.getItem(THEME_CACHE_KEY) as 'dark' | 'light' | null;
+      if (savedTheme === 'dark' || savedTheme === 'light') {
+        setTheme(savedTheme);
+      }
+    } catch {}
   }, []);
 
   // Supabase Cloud PostgreSQL Real-time Synchronization (when configured)
@@ -419,6 +427,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } else {
       document.documentElement.classList.remove('light-mode');
     }
+    try {
+      localStorage.setItem(THEME_CACHE_KEY, theme);
+    } catch {}
   }, [theme]);
 
   const toggleTheme = () => {
