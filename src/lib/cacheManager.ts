@@ -1,11 +1,11 @@
 import { Product, Customer, Invoice, Quotation } from '@/types';
 
 const STORAGE_KEYS = {
-  PRODUCTS: 'gol_v10_cache_products',
-  CUSTOMERS: 'gol_v10_cache_customers',
-  INVOICES: 'gol_v10_cache_invoices',
-  QUOTATIONS: 'gol_v10_cache_quotations',
-  THEME: 'gol_v10_theme_preference',
+  PRODUCTS: 'gol_v11_cache_products',
+  CUSTOMERS: 'gol_v11_cache_customers',
+  INVOICES: 'gol_v11_cache_invoices',
+  QUOTATIONS: 'gol_v11_cache_quotations',
+  THEME: 'gol_v11_theme_preference',
 } as const;
 
 // ── L1 In-Memory High-Speed Cache ──────────────────────────────────────────────
@@ -53,7 +53,8 @@ function setStorageItem<T>(key: string, data: T[]): void {
 export function initMemoryCache(): MemoryStore {
   if (memoryStore.isHydrated) return memoryStore;
 
-  const products = getStorageItem<Product>(STORAGE_KEYS.PRODUCTS);
+  const rawProducts = getStorageItem<Product>(STORAGE_KEYS.PRODUCTS);
+  const products = rawProducts.sort((a, b) => (b.itemSold || 0) - (a.itemSold || 0));
   const customers = getStorageItem<Customer>(STORAGE_KEYS.CUSTOMERS);
   const invoices = getStorageItem<Invoice>(STORAGE_KEYS.INVOICES);
   const quotations = getStorageItem<Quotation>(STORAGE_KEYS.QUOTATIONS);
@@ -79,13 +80,16 @@ export const CacheManager = {
   getProducts(): Product[] {
     if (memoryStore.products.length > 0) return memoryStore.products;
     const stored = getStorageItem<Product>(STORAGE_KEYS.PRODUCTS);
-    if (stored.length > 0) memoryStore.products = stored;
+    if (stored.length > 0) {
+      memoryStore.products = stored.sort((a, b) => (b.itemSold || 0) - (a.itemSold || 0));
+    }
     return memoryStore.products;
   },
 
   setProducts(products: Product[]): void {
-    memoryStore.products = products;
-    setStorageItem(STORAGE_KEYS.PRODUCTS, products);
+    const sorted = [...products].sort((a, b) => (b.itemSold || 0) - (a.itemSold || 0));
+    memoryStore.products = sorted;
+    setStorageItem(STORAGE_KEYS.PRODUCTS, sorted);
   },
 
   getCustomers(): Customer[] {

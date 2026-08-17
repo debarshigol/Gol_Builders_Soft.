@@ -297,35 +297,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const loadPriorityPipeline = async () => {
       if (isShopkeeper) {
-        // ★ TIER 1 PRIORITY (SHOPKEEPER): Instant Product Catalog + Customer Directory
+        // ★ STAGE 1 (CRITICAL - IMMEDIATE): Load Products Table First
         try {
-          const [prodRes, custRes] = await Promise.allSettled([
-            sb.from('products')
-              .select('id,name,category,sub_category,price,cost_price,stock,sku,unit,image_emoji,image_url,created_at')
-              .order('created_at', { ascending: false }),
-            sb.from('customers')
-              .select('id,phone,name,address,registered_at,total_purchases,total_spent,total_due')
-              .order('created_at', { ascending: false }),
-          ]);
+          const prodRes = await sb.from('products')
+            .select('id,name,category,sub_category,price,cost_price,stock,item_sold,sku,unit,image_emoji,image_url,created_at')
+            .order('item_sold', { ascending: false });
 
-          if (prodRes.status === 'fulfilled' && prodRes.value.data && !prodRes.value.error) {
-            const mapped = prodRes.value.data.map(mapDbProduct);
+          if (prodRes.data && !prodRes.error) {
+            const mapped = prodRes.data
+              .map(mapDbProduct)
+              .sort((a, b) => (b.itemSold || 0) - (a.itemSold || 0));
             setProducts(mapped);
             CacheManager.setProducts(mapped);
           }
-          if (custRes.status === 'fulfilled' && custRes.value.data && !custRes.value.error) {
-            const mapped = custRes.value.data.map(mapDbCustomer);
-            setCustomers(mapped);
-            CacheManager.setCustomers(mapped);
-          }
         } catch (e) {
-          console.warn('Priority Tier 1 sync error:', e);
+          console.warn('Product load error:', e);
         }
 
-        // ★ TIER 2 PRIORITY (SHOPKEEPER): Deferred Invoices & Quotations in idle frame
+        // ★ STAGE 2 (DEFERRED ASYNC): Load Customers, Invoices, Quotations in Background
         setTimeout(async () => {
           try {
-            const [invRes, quotRes] = await Promise.allSettled([
+            const [custRes, invRes, quotRes] = await Promise.allSettled([
+              sb.from('customers')
+                .select('id,phone,name,address,registered_at,total_purchases,total_spent,total_due')
+                .order('created_at', { ascending: false }),
               sb.from('invoices')
                 .select('id,customer_phone,customer_name,customer_address,customer_gstin,items,subtotal,tax_rate,tax_amount,cgst_amount,sgst_amount,discount,total_amount,amount_paid,due_amount,payment_method,payment_status,is_settlement_receipt,is_gst_invoice,previous_due,status,created_at')
                 .order('created_at', { ascending: false }),
@@ -333,6 +328,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 .select('id,customer_name,customer_phone,customer_address,notes,items,subtotal,tax_rate,tax_amount,discount,total_amount,created_at,valid_until,status,is_targeted,owner_call_log')
                 .order('created_at', { ascending: false }),
             ]);
+
+            if (custRes.status === 'fulfilled' && custRes.value.data && !custRes.value.error) {
+              const mapped = custRes.value.data.map(mapDbCustomer);
+              setCustomers(mapped);
+              CacheManager.setCustomers(mapped);
+            }
             if (invRes.status === 'fulfilled' && invRes.value.data && !invRes.value.error) {
               const mapped = invRes.value.data.map(mapDbInvoice);
               setInvoices(mapped);
@@ -344,7 +345,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               CacheManager.setQuotations(mapped);
             }
           } catch (e) {}
-        }, 150);
+        }, 100);
 
       } else {
         // ★ TIER 1 PRIORITY (OWNER): Key Sales KPI Invoices + Inventory Overview + Customer Dues
@@ -354,8 +355,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               .select('id,customer_phone,customer_name,customer_address,customer_gstin,items,subtotal,tax_rate,tax_amount,cgst_amount,sgst_amount,discount,total_amount,amount_paid,due_amount,payment_method,payment_status,is_settlement_receipt,is_gst_invoice,previous_due,status,created_at')
               .order('created_at', { ascending: false }),
             sb.from('products')
-              .select('id,name,category,sub_category,price,cost_price,stock,sku,unit,image_emoji,image_url,created_at')
-              .order('created_at', { ascending: false }),
+              .select('id,name,category,sub_category,price,cost_price,stock,item_sold,sku,unit,image_emoji,image_url,created_at')
+              .order('item_sold', { ascending: false }),
             sb.from('customers')
               .select('id,phone,name,address,registered_at,total_purchases,total_spent,total_due')
               .order('created_at', { ascending: false }),
@@ -367,7 +368,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             CacheManager.setInvoices(mapped);
           }
           if (prodRes.status === 'fulfilled' && prodRes.value.data && !prodRes.value.error) {
-            const mapped = prodRes.value.data.map(mapDbProduct);
+            const mapped = prodRes.value.data
+              .map(mapDbProduct)
+              .sort((a, b) => (b.itemSold || 0) - (a.itemSold || 0));
             setProducts(mapped);
             CacheManager.setProducts(mapped);
           }

@@ -8,18 +8,15 @@ import { ItemBillingSection } from '@/components/shopkeeper/ItemBillingSection';
 import { Invoice } from '@/types';
 
 const CustomerHistorySection = dynamic(
-  () => import('@/components/shopkeeper/CustomerHistorySection').then(m => m.CustomerHistorySection),
-  { ssr: false }
+  () => import('@/components/shopkeeper/CustomerHistorySection').then(m => m.CustomerHistorySection)
 );
 
 const QuotationSection = dynamic(
-  () => import('@/components/shopkeeper/QuotationSection').then(m => m.QuotationSection),
-  { ssr: false }
+  () => import('@/components/shopkeeper/QuotationSection').then(m => m.QuotationSection)
 );
 
 const InvoiceModal = dynamic(
-  () => import('@/components/shopkeeper/InvoiceModal').then(m => m.InvoiceModal),
-  { ssr: false }
+  () => import('@/components/shopkeeper/InvoiceModal').then(m => m.InvoiceModal)
 );
 
 export default function ShopkeeperPage() {
