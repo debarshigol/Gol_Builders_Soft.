@@ -106,23 +106,20 @@ export const ItemBillingSection: React.FC<ItemBillingSectionProps> = ({
     }
   };
 
-  // Categories list (Includes Main Categories and Sub-Categories)
+  // Categories list (Only Main Categories - Sub-Categories are excluded from tab list)
   const categories = useMemo(() => {
-    const mainCats = products.map(p => p.category).filter(Boolean);
-    const subCats = products.map(p => p.subCategory).filter((s): s is string => Boolean(s));
-    const set = new Set([...mainCats, ...subCats]);
-    return ['All', ...Array.from(set)];
+    const mainCats = Array.from(new Set(products.map(p => p.category).filter(Boolean)));
+    return ['All', ...mainCats];
   }, [products]);
 
-  // Filter products and sort by total units sold (itemSold descending).
+  // Filter products by Category and sort by total units sold (itemSold descending).
   const filteredProducts = useMemo(() => {
     const searchLower = (searchTerm || '').toLowerCase().trim();
     const filtered = products.filter(product => {
       if (!product) return false;
       const matchesCategory =
         selectedCategory === 'All' ||
-        product.category === selectedCategory ||
-        product.subCategory === selectedCategory;
+        product.category === selectedCategory;
       const matchesSearch =
         !searchLower ||
         (product.name && product.name.toLowerCase().includes(searchLower)) ||
@@ -422,7 +419,13 @@ export const ItemBillingSection: React.FC<ItemBillingSectionProps> = ({
                     >
                       <div className="flex items-center space-x-3 overflow-hidden">
                         {item.product.imageUrl ? (
-                          <img src={item.product.imageUrl} alt={item.product.name} className="w-8 h-8 object-contain p-0.5 rounded-lg border border-slate-700 shrink-0" />
+                          <img
+                            src={item.product.imageUrl}
+                            alt={item.product.name}
+                            loading="lazy"
+                            decoding="async"
+                            className="w-8 h-8 object-contain p-0.5 rounded-lg border border-slate-700 shrink-0 bg-slate-900"
+                          />
                         ) : (
                           <span className="text-2xl shrink-0">{item.product.imageEmoji || '📦'}</span>
                         )}

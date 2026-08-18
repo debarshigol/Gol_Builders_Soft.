@@ -17,9 +17,22 @@ interface InvoiceModalProps {
   onClose: () => void;
 }
 
-export const InvoiceModal: React.FC<InvoiceModalProps> = ({ invoice, onClose }) => {
-  const { resetBillingSession } = useApp();
+export const InvoiceModal: React.FC<InvoiceModalProps> = ({ invoice: invoiceProp, onClose }) => {
+  const { resetBillingSession, fetchInvoiceDetails } = useApp();
   const [copied, setCopied] = useState(false);
+  const [hydratedInvoice, setHydratedInvoice] = useState<Invoice | null>(invoiceProp);
+
+  // Sync state when invoice prop changes or fetch missing items
+  React.useEffect(() => {
+    setHydratedInvoice(invoiceProp);
+    if (invoiceProp && (!invoiceProp.items || invoiceProp.items.length === 0) && !invoiceProp.isSettlementReceipt) {
+      fetchInvoiceDetails(invoiceProp.id).then(res => {
+        if (res) setHydratedInvoice(res);
+      });
+    }
+  }, [invoiceProp, fetchInvoiceDetails]);
+
+  const invoice = hydratedInvoice || invoiceProp;
 
   if (!invoice) return null;
 
@@ -271,22 +284,30 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({ invoice, onClose }) 
                     </tr>
                   </thead>
                   <tbody>
-                    {invoice.items.map((item, idx) => (
-                      <tr key={idx} className="border-b border-neutral-200">
-                        <td className="py-2 px-2 font-medium text-black">
-                          {item.product.name}
-                        </td>
-                        <td className="py-2 px-2 text-right font-mono text-neutral-800">
-                          {item.product.price.toLocaleString('en-IN')}
-                        </td>
-                        <td className="py-2 px-2 text-center font-mono text-neutral-800">
-                          {item.quantity} {item.product.unit}
-                        </td>
-                        <td className="py-2 px-2 text-right font-mono font-bold text-black">
-                          {(item.product.price * item.quantity).toLocaleString('en-IN')}
+                    {(invoice.items || []).length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="py-4 text-center text-neutral-500 italic text-xs">
+                          Loading line items...
                         </td>
                       </tr>
-                    ))}
+                    ) : (
+                      (invoice.items || []).map((item, idx) => (
+                        <tr key={idx} className="border-b border-neutral-200">
+                          <td className="py-2 px-2 font-medium text-black">
+                            {item.product?.name || 'Item'}
+                          </td>
+                          <td className="py-2 px-2 text-right font-mono text-neutral-800">
+                            {(item.product?.price || 0).toLocaleString('en-IN')}
+                          </td>
+                          <td className="py-2 px-2 text-center font-mono text-neutral-800">
+                            {item.quantity} {item.product?.unit || 'Units'}
+                          </td>
+                          <td className="py-2 px-2 text-right font-mono font-bold text-black">
+                            {((item.product?.price || 0) * item.quantity).toLocaleString('en-IN')}
+                          </td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>

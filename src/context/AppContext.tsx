@@ -70,13 +70,26 @@ function mapCustomerToDb(c: Customer) {
 
 // Helper to map Supabase DB row to Invoice
 function mapDbInvoice(row: any): Invoice {
+  let parsedItems = [];
+  if (row.items) {
+    if (typeof row.items === 'string') {
+      try {
+        parsedItems = JSON.parse(row.items);
+      } catch {
+        parsedItems = [];
+      }
+    } else if (Array.isArray(row.items)) {
+      parsedItems = row.items;
+    }
+  }
+
   return {
     id: row.id,
     customerPhone: row.customer_phone,
     customerName: row.customer_name,
     customerAddress: row.customer_address || '',
     customerGstin: row.customer_gstin || undefined,
-    items: typeof row.items === 'string' ? JSON.parse(row.items) : row.items || [],
+    items: parsedItems,
     subtotal: Number(row.subtotal) || 0,
     taxRate: Number(row.tax_rate) || 0,
     taxAmount: Number(row.tax_amount) || 0,
@@ -198,6 +211,10 @@ interface AppContextType {
   // Invoice & Settlement Actions
   lastGeneratedInvoice: Invoice | null;
   setLastGeneratedInvoice: (inv: Invoice | null) => void;
+  fetchInvoiceDetails: (invoiceId: string) => Promise<Invoice | null>;
+  loadMoreInvoices: (pageSize?: number) => Promise<boolean>;
+  hasMoreInvoices: boolean;
+  isLoadingMoreInvoices: boolean;
   generateInvoice: (
     paymentMethod: PaymentMethod,
     taxRate?: number,
@@ -265,6 +282,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [invoices, setInvoices] = useState<Invoice[]>(initialInvoices);
   const [quotations, setQuotations] = useState<Quotation[]>(initialQuotations);
   const [theme, setTheme] = useState<'dark' | 'light'>('light');
+  const [hasMoreInvoices, setHasMoreInvoices] = useState<boolean>(true);
+  const [isLoadingMoreInvoices, setIsLoadingMoreInvoices] = useState<boolean>(false);
 
   // Billing Flow States
   const [phoneSearchTerm, setPhoneSearchTerm] = useState<string>('');
@@ -314,7 +333,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           console.warn('Product load error:', e);
         }
 
-        // ★ STAGE 2 (DEFERRED ASYNC): Load Customers, Invoices, Quotations in Background
+        // ★ STAGE 2 (DEFERRED ASYNC): Load Customers, Invoices (Recent 50), Quotations in Background
         setTimeout(async () => {
           try {
             const [custRes, invRes, quotRes] = await Promise.allSettled([
@@ -322,8 +341,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 .select('id,phone,name,address,registered_at,total_purchases,total_spent,total_due')
                 .order('created_at', { ascending: false }),
               sb.from('invoices')
-                .select('id,customer_phone,customer_name,customer_address,customer_gstin,items,subtotal,tax_rate,tax_amount,cgst_amount,sgst_amount,discount,total_amount,amount_paid,due_amount,payment_method,payment_status,is_settlement_receipt,is_gst_invoice,previous_due,status,created_at')
-                .order('created_at', { ascending: false }),
+                .select('id,customer_phone,customer_name,customer_address,customer_gstin,subtotal,tax_rate,tax_amount,cgst_amount,sgst_amount,discount,total_amount,amount_paid,due_amount,payment_method,payment_status,is_settlement_receipt,is_gst_invoice,previous_due,status,created_at')
+                .order('created_at', { ascending: false })
+                .limit(50),
               sb.from('quotations')
                 .select('id,customer_name,customer_phone,customer_address,notes,items,subtotal,tax_rate,tax_amount,discount,total_amount,created_at,valid_until,status,is_targeted,owner_call_log')
                 .order('created_at', { ascending: false }),
@@ -336,6 +356,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             }
             if (invRes.status === 'fulfilled' && invRes.value.data && !invRes.value.error) {
               const mapped = invRes.value.data.map(mapDbInvoice);
+              if (mapped.length < 50) setHasMoreInvoices(false);
               setInvoices(mapped);
               CacheManager.setInvoices(mapped);
             }
@@ -348,12 +369,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }, 100);
 
       } else {
-        // ★ TIER 1 PRIORITY (OWNER): Key Sales KPI Invoices + Inventory Overview + Customer Dues
+        // ★ TIER 1 PRIORITY (OWNER): Key Sales KPI Invoices (Recent 50) + Inventory Overview + Customer Dues
         try {
           const [invRes, prodRes, custRes] = await Promise.allSettled([
             sb.from('invoices')
-              .select('id,customer_phone,customer_name,customer_address,customer_gstin,items,subtotal,tax_rate,tax_amount,cgst_amount,sgst_amount,discount,total_amount,amount_paid,due_amount,payment_method,payment_status,is_settlement_receipt,is_gst_invoice,previous_due,status,created_at')
-              .order('created_at', { ascending: false }),
+              .select('id,customer_phone,customer_name,customer_address,customer_gstin,subtotal,tax_rate,tax_amount,cgst_amount,sgst_amount,discount,total_amount,amount_paid,due_amount,payment_method,payment_status,is_settlement_receipt,is_gst_invoice,previous_due,status,created_at')
+              .order('created_at', { ascending: false })
+              .limit(50),
             sb.from('products')
               .select('id,name,category,sub_category,price,cost_price,stock,item_sold,sku,unit,image_emoji,image_url,created_at')
               .order('item_sold', { ascending: false }),
@@ -364,6 +386,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
           if (invRes.status === 'fulfilled' && invRes.value.data && !invRes.value.error) {
             const mapped = invRes.value.data.map(mapDbInvoice);
+            if (mapped.length < 50) setHasMoreInvoices(false);
             setInvoices(mapped);
             CacheManager.setInvoices(mapped);
           }
@@ -938,6 +961,103 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return newInvoice;
   };
 
+  // Lazy-Load Invoice Item Details on Demand (when user clicks View Bill)
+  const fetchInvoiceDetails = async (invoiceId: string): Promise<Invoice | null> => {
+    const existing = invoices.find(inv => inv.id === invoiceId);
+    // If items are already populated or if it is a settlement receipt without items, return immediately
+    if (existing && ((existing.items && existing.items.length > 0) || existing.isSettlementReceipt)) {
+      return existing;
+    }
+
+    if (!isSupabaseConfigured || !supabase) {
+      return existing || null;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('invoices')
+        .select('items')
+        .eq('id', invoiceId)
+        .single();
+
+      if (data && !error) {
+        let parsedItems: any[] = [];
+        if (data.items) {
+          if (typeof data.items === 'string') {
+            try {
+              parsedItems = JSON.parse(data.items);
+            } catch {
+              parsedItems = [];
+            }
+          } else if (Array.isArray(data.items)) {
+            parsedItems = data.items;
+          }
+        }
+
+        let updatedInvoice: Invoice | null = null;
+        setInvoices(prev => {
+          const updated = prev.map(inv => {
+            if (inv.id === invoiceId) {
+              updatedInvoice = { ...inv, items: parsedItems };
+              return updatedInvoice;
+            }
+            return inv;
+          });
+          CacheManager.setInvoices(updated);
+          return updated;
+        });
+
+        return updatedInvoice || (existing ? { ...existing, items: parsedItems } : null);
+      }
+    } catch (e) {
+      console.warn('Failed to lazy-load invoice items:', e);
+    }
+
+    return existing || null;
+  };
+
+  // Load More Past Invoices from Supabase on Demand
+  const loadMoreInvoices = async (pageSize: number = 50): Promise<boolean> => {
+    if (!isSupabaseConfigured || !supabase || isLoadingMoreInvoices || !hasMoreInvoices) {
+      return false;
+    }
+
+    setIsLoadingMoreInvoices(true);
+    try {
+      const currentOffset = invoices.length;
+      const { data, error } = await supabase
+        .from('invoices')
+        .select('id,customer_phone,customer_name,customer_address,customer_gstin,subtotal,tax_rate,tax_amount,cgst_amount,sgst_amount,discount,total_amount,amount_paid,due_amount,payment_method,payment_status,is_settlement_receipt,is_gst_invoice,previous_due,status,created_at')
+        .order('created_at', { ascending: false })
+        .range(currentOffset, currentOffset + pageSize - 1);
+
+      if (data && !error) {
+        const mapped = data.map(mapDbInvoice);
+        if (mapped.length < pageSize) {
+          setHasMoreInvoices(false);
+        }
+        if (mapped.length > 0) {
+          setInvoices(prev => {
+            const existingIds = new Set(prev.map(i => i.id));
+            const newUnique = mapped.filter(i => !existingIds.has(i.id));
+            const combined = [...prev, ...newUnique];
+            CacheManager.setInvoices(combined);
+            return combined;
+          });
+        }
+        setIsLoadingMoreInvoices(false);
+        return mapped.length > 0;
+      } else {
+        setIsLoadingMoreInvoices(false);
+        return false;
+      }
+    } catch (e) {
+      console.warn('Failed to load more invoices:', e);
+      setIsLoadingMoreInvoices(false);
+      return false;
+    }
+  };
+
   // Quotation Generator
   const createQuotation = (data: {
     customerName: string;
@@ -1140,6 +1260,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         clearCart,
         lastGeneratedInvoice,
         setLastGeneratedInvoice,
+        fetchInvoiceDetails,
+        loadMoreInvoices,
+        hasMoreInvoices,
+        isLoadingMoreInvoices,
         generateInvoice,
         payCustomerDue,
         createManualGstInvoice,

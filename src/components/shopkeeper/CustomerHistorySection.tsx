@@ -24,7 +24,16 @@ interface CustomerHistorySectionProps {
 }
 
 export const CustomerHistorySection: React.FC<CustomerHistorySectionProps> = ({ onViewInvoice }) => {
-  const { invoices, customers, activeCustomer, payCustomerDue } = useApp();
+  const { invoices, customers, activeCustomer, payCustomerDue, fetchInvoiceDetails } = useApp();
+
+  const handleViewInvoiceWithDetails = async (inv: Invoice) => {
+    try {
+      const hydrated = await fetchInvoiceDetails(inv.id);
+      onViewInvoice(hydrated || inv);
+    } catch {
+      onViewInvoice(inv);
+    }
+  };
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'due' | 'today'>('all');
 
@@ -439,7 +448,7 @@ export const CustomerHistorySection: React.FC<CustomerHistorySectionProps> = ({ 
                   className="group bg-slate-950 hover:bg-slate-900/90 border border-slate-800 hover:border-indigo-500/50 rounded-2xl p-4 sm:p-5 transition-all shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-4"
                 >
                   {/* Customer & Invoice Overview */}
-                  <div className="flex items-center space-x-3.5 cursor-pointer flex-1" onClick={() => onViewInvoice(inv)}>
+                  <div className="flex items-center space-x-3.5 cursor-pointer flex-1" onClick={() => handleViewInvoiceWithDetails(inv)}>
                     <div className="w-11 h-11 rounded-xl bg-slate-900 group-hover:bg-indigo-500/10 border border-slate-800 group-hover:border-indigo-500/30 flex items-center justify-center text-indigo-400 font-black shrink-0 transition">
                       <Receipt className="w-5 h-5 text-indigo-400 group-hover:scale-110 transition-transform" />
                     </div>
@@ -499,7 +508,7 @@ export const CustomerHistorySection: React.FC<CustomerHistorySectionProps> = ({ 
 
                   {/* Amount & Direct Pay Due Action */}
                   <div className="flex items-center justify-between sm:justify-end space-x-3 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-900 shrink-0">
-                    <div className="text-left sm:text-right cursor-pointer" onClick={() => onViewInvoice(inv)}>
+                    <div className="text-left sm:text-right cursor-pointer" onClick={() => handleViewInvoiceWithDetails(inv)}>
                       <div className="text-lg font-black text-white font-mono group-hover:text-indigo-300 transition">
                         ₹{inv.totalAmount.toLocaleString('en-IN')}
                       </div>
@@ -515,7 +524,7 @@ export const CustomerHistorySection: React.FC<CustomerHistorySectionProps> = ({ 
 
                     <button
                       type="button"
-                      onClick={() => onViewInvoice(inv)}
+                      onClick={() => handleViewInvoiceWithDetails(inv)}
                       className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl transition flex items-center space-x-1.5 shadow-md shrink-0 cursor-pointer"
                     >
                       <ExternalLink className="w-4 h-4" />

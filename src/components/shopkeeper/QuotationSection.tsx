@@ -64,10 +64,10 @@ export const QuotationSection: React.FC<QuotationSectionProps> = ({
   const [quotationSearchTerm, setQuotationSearchTerm] = useState<string>('');
   const [viewingQuotation, setViewingQuotation] = useState<Quotation | null>(null);
 
-  // Available Categories
+  // Available Categories (Only Main Categories)
   const categories = useMemo(() => {
-    const set = new Set(products.map(p => p.category));
-    return ['All', ...Array.from(set)];
+    const mainCats = Array.from(new Set(products.map(p => p.category).filter(Boolean)));
+    return ['All', ...mainCats];
   }, [products]);
 
   // Filtered Products for 100% full width grid
@@ -231,7 +231,13 @@ export const QuotationSection: React.FC<QuotationSectionProps> = ({
                     </span>
 
                     {product.imageUrl ? (
-                      <img src={product.imageUrl} alt={product.name} className="w-full h-full object-contain p-1 rounded-xl" />
+                      <img
+                        src={product.imageUrl}
+                        alt={product.name}
+                        loading="lazy"
+                        decoding="async"
+                        className="w-full h-full object-contain p-1 rounded-xl"
+                      />
                     ) : (
                       <span className="text-4xl sm:text-5xl group-hover:scale-110 transition-transform duration-300 select-none filter drop-shadow-md">
                         {product.imageEmoji || '📦'}
@@ -382,7 +388,13 @@ export const QuotationSection: React.FC<QuotationSectionProps> = ({
                       >
                         <div className="flex items-center space-x-3 overflow-hidden">
                           {item.product.imageUrl ? (
-                            <img src={item.product.imageUrl} alt={item.product.name} className="w-8 h-8 object-contain p-0.5 rounded-lg border border-slate-700 shrink-0" />
+                            <img
+                              src={item.product.imageUrl}
+                              alt={item.product.name}
+                              loading="lazy"
+                              decoding="async"
+                              className="w-8 h-8 object-contain p-0.5 rounded-lg border border-slate-700 shrink-0 bg-slate-900"
+                            />
                           ) : (
                             <span className="text-2xl shrink-0">{item.product.imageEmoji || '📦'}</span>
                           )}

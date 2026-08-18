@@ -28,6 +28,10 @@ import {
   Printer,
   FileCheck2,
   FileSpreadsheet,
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
+  RefreshCw,
 } from 'lucide-react';
 import dynamic from 'next/dynamic';
 
@@ -65,12 +69,30 @@ export const OwnerDashboard: React.FC<{ onViewInvoice: (inv: Invoice) => void }>
     updateProductStock,
     updateProductPrice,
     deleteProduct,
+    fetchInvoiceDetails,
+    loadMoreInvoices,
+    hasMoreInvoices,
+    isLoadingMoreInvoices,
   } = useApp();
 
   const [activeTab, setActiveTab] = useState<'analytics' | 'sales' | 'inventory' | 'customers' | 'gst_invoices' | 'quotations'>('analytics');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isManualGstModalOpen, setIsManualGstModalOpen] = useState(false);
   const [productToDelete, setProductToDelete] = useState<Product | null>(null);
+  const [openingInvoiceId, setOpeningInvoiceId] = useState<string | null>(null);
+
+  // Lazy-load invoice line items when View Bill is clicked
+  const handleViewInvoiceWithDetails = async (inv: Invoice) => {
+    setOpeningInvoiceId(inv.id);
+    try {
+      const hydrated = await fetchInvoiceDetails(inv.id);
+      onViewInvoice(hydrated || inv);
+    } catch {
+      onViewInvoice(inv);
+    } finally {
+      setOpeningInvoiceId(null);
+    }
+  };
 
   // Modal for Viewing Full Quotation Details
   const [viewingQuotation, setViewingQuotation] = useState<Quotation | null>(null);
@@ -79,42 +101,115 @@ export const OwnerDashboard: React.FC<{ onViewInvoice: (inv: Invoice) => void }>
   const [quoteSearch, setQuoteSearch] = useState('');
   const [quoteFilter, setQuoteFilter] = useState<'all' | 'targeted' | 'pending' | 'converted'>('all');
 
-  // Sales History Filters
+  // Sales History Filters & Pagination
   const [salesSearch, setSalesSearch] = useState('');
   const [paymentFilter, setPaymentFilter] = useState<string>('All');
   const [dateFilter, setDateFilter] = useState<'all' | 'today' | '7days'>('all');
+  const [salesPage, setSalesPage] = useState(1);
+  const [salesPerPage, setSalesPerPage] = useState(25);
 
-  // Inventory Search & Filters
+  // Inventory Search, Filters & Pagination
   const [inventorySearch, setInventorySearch] = useState('');
   const [inventoryCategory, setInventoryCategory] = useState('All');
   const [inventoryStockFilter, setInventoryStockFilter] = useState<'all' | 'low_stock' | 'out_of_stock' | 'in_stock'>('all');
+  const [inventoryPage, setInventoryPage] = useState(1);
+  const [inventoryPerPage, setInventoryPerPage] = useState(25);
 
   // Customer Search
   const [customerSearch, setCustomerSearch] = useState('');
 
-  // GST Invoices Search & Timeframe Filters
+  // GST Invoices Search, Timeframe Filters & Pagination
   const [gstSearch, setGstSearch] = useState('');
   const [gstTimeframe, setGstTimeframe] = useState<'all' | 'fy_2026' | 'fy_2025' | 'this_month' | 'today'>('all');
   const [gstRateFilter, setGstRateFilter] = useState<string>('All');
+  const [gstPage, setGstPage] = useState(1);
+  const [gstPerPage, setGstPerPage] = useState(25);
+
+  // Reset pagination on filter changes
+  const handleSalesSearchChange = (val: string) => { setSalesSearch(val); setSalesPage(1); };
+  const handlePaymentFilterChange = (val: string) => { setPaymentFilter(val); setSalesPage(1); };
+  const handleDateFilterChange = (val: 'all' | 'today' | '7days') => { setDateFilter(val); setSalesPage(1); };
+
+  const handleInventorySearchChange = (val: string) => { setInventorySearch(val); setInventoryPage(1); };
+  const handleInventoryCatChange = (val: string) => { setInventoryCategory(val); setInventoryPage(1); };
+  const handleInventoryStockFilterChange = (val: 'all' | 'low_stock' | 'out_of_stock' | 'in_stock') => { setInventoryStockFilter(val); setInventoryPage(1); };
+
+  const handleGstSearchChange = (val: string) => { setGstSearch(val); setGstPage(1); };
+  const handleGstTimeframeChange = (val: any) => { setGstTimeframe(val); setGstPage(1); };
+  const handleGstRateFilterChange = (val: string) => { setGstRateFilter(val); setGstPage(1); };
 
   // Key Analytics Computations (Memoized)
-  const totalRevenue = useMemo(() => invoices.reduce((acc, inv) => acc + inv.totalAmount, 0), [invoices]);
+  const totalRevenue = useMemo(
+    () => invoices.reduce((acc, inv) => acc + (inv.isSettlementReceipt ? 0 : inv.totalAmount), 0),
+    [invoices]
+  );
   const totalInvoicesCount = invoices.length;
   const lowStockCount = useMemo(() => products.filter(p => p.stock <= 10).length, [products]);
   const totalCustomersCount = customers.length;
   const totalOutstandingDues = useMemo(() => customers.reduce((acc, c) => acc + (c.totalDue || 0), 0), [customers]);
 
-  // Revenue chart data formatted from invoices
+  // Revenue chart data aggregated chronologically by calendar date
   const chartData = useMemo(() => {
-    return invoices
+    // Exclude settlement receipts from sales revenue
+    const salesOnly = invoices
+      .filter(inv => !inv.isSettlementReceipt)
       .slice()
-      .reverse()
-      .map(inv => ({
-        date: new Date(inv.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric' }),
-        amount: inv.totalAmount,
-        invoiceId: inv.id,
-        customer: inv.customerName,
-      }));
+      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+    if (salesOnly.length === 0) return [];
+
+    // Group sales chronologically by date
+    const dailyMap = new Map<string, {
+      dateKey: string;
+      dateLabel: string;
+      fullDate: string;
+      dailyRevenue: number;
+      paidAmount: number;
+      invoicesCount: number;
+      rawDate: Date;
+    }>();
+
+    salesOnly.forEach(inv => {
+      const d = new Date(inv.createdAt);
+      const dateKey = d.toISOString().split('T')[0];
+      const dateLabel = d.toLocaleDateString('en-IN', { month: 'short', day: 'numeric' });
+      const fullDate = d.toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' });
+
+      const existing = dailyMap.get(dateKey);
+      if (existing) {
+        existing.dailyRevenue = Number((existing.dailyRevenue + (inv.totalAmount || 0)).toFixed(2));
+        existing.paidAmount = Number((existing.paidAmount + (inv.amountPaid || 0)).toFixed(2));
+        existing.invoicesCount += 1;
+      } else {
+        dailyMap.set(dateKey, {
+          dateKey,
+          dateLabel,
+          fullDate,
+          dailyRevenue: Number((inv.totalAmount || 0).toFixed(2)),
+          paidAmount: Number((inv.amountPaid || 0).toFixed(2)),
+          invoicesCount: 1,
+          rawDate: d,
+        });
+      }
+    });
+
+    const sortedDays = Array.from(dailyMap.values()).sort(
+      (a, b) => a.rawDate.getTime() - b.rawDate.getTime()
+    );
+
+    let runningCumulative = 0;
+    return sortedDays.map(item => {
+      runningCumulative = Number((runningCumulative + item.dailyRevenue).toFixed(2));
+      return {
+        date: item.dateLabel,
+        fullDate: item.fullDate,
+        amount: item.dailyRevenue,
+        cumulativeAmount: runningCumulative,
+        paidAmount: item.paidAmount,
+        invoicesCount: item.invoicesCount,
+        rawTimestamp: item.rawDate.getTime(),
+      };
+    });
   }, [invoices]);
 
   // Payment Method Breakdown for pie/bar chart
@@ -150,6 +245,12 @@ export const OwnerDashboard: React.FC<{ onViewInvoice: (inv: Invoice) => void }>
     });
   }, [invoices, salesSearch, paymentFilter, dateFilter]);
 
+  const totalSalesPages = Math.max(1, Math.ceil(filteredInvoices.length / salesPerPage));
+  const paginatedInvoices = useMemo(() => {
+    const start = (salesPage - 1) * salesPerPage;
+    return filteredInvoices.slice(start, start + salesPerPage);
+  }, [filteredInvoices, salesPage, salesPerPage]);
+
   // Filter Inventory
   const categoriesList = useMemo(() => ['All', ...Array.from(new Set(products.map(p => p.category)))], [products]);
   const filteredProducts = useMemo(() => {
@@ -173,6 +274,12 @@ export const OwnerDashboard: React.FC<{ onViewInvoice: (inv: Invoice) => void }>
       return matchesCat && matchesSearch && matchesStock;
     });
   }, [products, inventoryCategory, inventorySearch, inventoryStockFilter]);
+
+  const totalInventoryPages = Math.max(1, Math.ceil(filteredProducts.length / inventoryPerPage));
+  const paginatedProducts = useMemo(() => {
+    const start = (inventoryPage - 1) * inventoryPerPage;
+    return filteredProducts.slice(start, start + inventoryPerPage);
+  }, [filteredProducts, inventoryPage, inventoryPerPage]);
 
   // Filter Customers
   const filteredCustomers = useMemo(() => {
@@ -226,6 +333,12 @@ export const OwnerDashboard: React.FC<{ onViewInvoice: (inv: Invoice) => void }>
 
   const totalGstTaxableValue = useMemo(() => filteredGstInvoices.reduce((sum, i) => sum + i.subtotal, 0), [filteredGstInvoices]);
   const totalGstTaxCollected = useMemo(() => filteredGstInvoices.reduce((sum, i) => sum + i.taxAmount, 0), [filteredGstInvoices]);
+
+  const totalGstPages = Math.max(1, Math.ceil(filteredGstInvoices.length / gstPerPage));
+  const paginatedGstInvoices = useMemo(() => {
+    const start = (gstPage - 1) * gstPerPage;
+    return filteredGstInvoices.slice(start, start + gstPerPage);
+  }, [filteredGstInvoices, gstPage, gstPerPage]);
 
   return (
     <div className="space-y-6">
@@ -496,16 +609,17 @@ export const OwnerDashboard: React.FC<{ onViewInvoice: (inv: Invoice) => void }>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
-                {filteredInvoices.length === 0 ? (
+                {paginatedInvoices.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="py-8 text-center text-slate-500">
                       No invoices found matching criteria.
                     </td>
                   </tr>
                 ) : (
-                  filteredInvoices.map(inv => {
+                  paginatedInvoices.map(inv => {
                     const paidVal = inv.amountPaid !== undefined ? inv.amountPaid : inv.totalAmount;
                     const dueVal = inv.dueAmount !== undefined ? inv.dueAmount : 0;
+                    const isOpening = openingInvoiceId === inv.id;
                     return (
                       <tr key={inv.id} className="hover:bg-slate-800/40 transition">
                         <td className="py-3 px-3 font-mono font-bold text-white">{inv.id}</td>
@@ -546,11 +660,16 @@ export const OwnerDashboard: React.FC<{ onViewInvoice: (inv: Invoice) => void }>
                         </td>
                         <td className="py-3 px-3 text-center">
                           <button
-                            onClick={() => onViewInvoice(inv)}
-                            className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-indigo-400 rounded-lg text-[11px] font-semibold border border-slate-700 transition flex items-center justify-center space-x-1 mx-auto"
+                            onClick={() => handleViewInvoiceWithDetails(inv)}
+                            disabled={isOpening}
+                            className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-indigo-400 rounded-lg text-[11px] font-semibold border border-slate-700 transition flex items-center justify-center space-x-1 mx-auto disabled:opacity-50"
                           >
-                            <Eye className="w-3.5 h-3.5" />
-                            <span>View Bill</span>
+                            {isOpening ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <Eye className="w-3.5 h-3.5" />
+                            )}
+                            <span>{isOpening ? 'Loading...' : 'View Bill'}</span>
                           </button>
                         </td>
                       </tr>
@@ -560,6 +679,75 @@ export const OwnerDashboard: React.FC<{ onViewInvoice: (inv: Invoice) => void }>
               </tbody>
             </table>
           </div>
+
+          {/* Sales Pagination Bar */}
+          {filteredInvoices.length > 0 && (
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-800/80 text-xs text-slate-400">
+              <div className="flex items-center space-x-2">
+                <span>
+                  Showing <strong className="text-white">{(salesPage - 1) * salesPerPage + 1}</strong> – <strong className="text-white">{Math.min(salesPage * salesPerPage, filteredInvoices.length)}</strong> of <strong className="text-white">{filteredInvoices.length}</strong> loaded invoices
+                </span>
+                <select
+                  value={salesPerPage}
+                  onChange={e => {
+                    setSalesPerPage(Number(e.target.value));
+                    setSalesPage(1);
+                  }}
+                  className="bg-slate-950 border border-slate-800 text-slate-300 text-xs rounded-lg px-2 py-1 focus:outline-none ml-2 font-medium"
+                >
+                  <option value={25}>25 / page</option>
+                  <option value={50}>50 / page</option>
+                  <option value={100}>100 / page</option>
+                </select>
+              </div>
+
+              <div className="flex items-center space-x-1.5">
+                <button
+                  onClick={() => setSalesPage(p => Math.max(1, p - 1))}
+                  disabled={salesPage <= 1}
+                  className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-slate-300 hover:bg-slate-800 disabled:opacity-30 disabled:cursor-not-allowed transition flex items-center space-x-1"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                  <span>Prev</span>
+                </button>
+                <span className="px-2.5 py-1 text-slate-400 font-mono text-xs">
+                  Page <strong className="text-white">{salesPage}</strong> of <strong className="text-white">{totalSalesPages}</strong>
+                </span>
+                <button
+                  onClick={() => setSalesPage(p => Math.min(totalSalesPages, p + 1))}
+                  disabled={salesPage >= totalSalesPages}
+                  className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-slate-300 hover:bg-slate-800 disabled:opacity-30 disabled:cursor-not-allowed transition flex items-center space-x-1"
+                >
+                  <span>Next</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Load More Invoices from Supabase Button */}
+          {hasMoreInvoices && (
+            <div className="pt-2 flex justify-center border-t border-slate-800/40">
+              <button
+                type="button"
+                onClick={() => loadMoreInvoices(50)}
+                disabled={isLoadingMoreInvoices}
+                className="px-4 py-2 bg-slate-800/90 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-semibold flex items-center space-x-2 transition cursor-pointer disabled:opacity-50 shadow-md"
+              >
+                {isLoadingMoreInvoices ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-400" />
+                    <span>Fetching older invoices from cloud...</span>
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 text-indigo-400" />
+                    <span>Load Older Invoices from Cloud Database</span>
+                  </>
+                )}
+              </button>
+            </div>
+          )}
 
         </div>
       )}
@@ -575,7 +763,7 @@ export const OwnerDashboard: React.FC<{ onViewInvoice: (inv: Invoice) => void }>
               <input
                 type="text"
                 value={inventorySearch}
-                onChange={e => setInventorySearch(e.target.value)}
+                onChange={e => handleInventorySearchChange(e.target.value)}
                 placeholder="Search inventory by name or SKU..."
                 className="w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500"
               />
@@ -584,7 +772,7 @@ export const OwnerDashboard: React.FC<{ onViewInvoice: (inv: Invoice) => void }>
             <div className="flex items-center space-x-2">
               <select
                 value={inventoryCategory}
-                onChange={e => setInventoryCategory(e.target.value)}
+                onChange={e => handleInventoryCatChange(e.target.value)}
                 className="bg-slate-950 border border-slate-800 text-slate-300 text-xs rounded-xl p-2 focus:outline-none"
               >
                 {categoriesList.map(cat => (
@@ -611,110 +799,179 @@ export const OwnerDashboard: React.FC<{ onViewInvoice: (inv: Invoice) => void }>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
-                {filteredProducts.map(p => {
-                  const margin = p.price > 0 ? Math.round(((p.price - p.costPrice) / p.price) * 100) : 0;
-                  return (
-                    <tr key={p.id} className="hover:bg-slate-800/40 transition">
-                      <td className="py-3 px-3">
-                        <div className="flex items-center space-x-2.5">
-                          {p.imageUrl ? (
-                            <img src={p.imageUrl} alt={p.name} className="w-7 h-7 object-contain p-0.5 rounded-lg border border-slate-700 shrink-0" />
-                          ) : (
-                            <span className="text-xl shrink-0">{p.imageEmoji || '📦'}</span>
-                          )}
-                          <div>
-                            <div className="font-semibold text-white">{p.name}</div>
-                            <div className="text-[10px] text-slate-400">Per {p.unit}</div>
+                {paginatedProducts.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="py-8 text-center text-slate-500">
+                      No products found matching criteria.
+                    </td>
+                  </tr>
+                ) : (
+                  paginatedProducts.map(p => {
+                    const margin = p.price > 0 ? Math.round(((p.price - p.costPrice) / p.price) * 100) : 0;
+                    return (
+                      <tr key={p.id} className="hover:bg-slate-800/40 transition">
+                        <td className="py-3 px-3">
+                          <div className="flex items-center space-x-2.5">
+                            {p.imageUrl ? (
+                              <img
+                                src={p.imageUrl}
+                                alt={p.name}
+                                loading="lazy"
+                                decoding="async"
+                                onError={(e) => {
+                                  (e.target as HTMLElement).style.display = 'none';
+                                  const parent = (e.target as HTMLElement).parentElement;
+                                  const fallback = parent?.querySelector('.emoji-fallback') as HTMLElement;
+                                  if (fallback) fallback.style.display = 'inline';
+                                }}
+                                className="w-7 h-7 object-contain p-0.5 rounded-lg border border-slate-700 shrink-0 bg-slate-950"
+                              />
+                            ) : null}
+                            <span
+                              className="emoji-fallback text-xl shrink-0"
+                              style={{ display: p.imageUrl ? 'none' : 'inline' }}
+                            >
+                              {p.imageEmoji || '📦'}
+                            </span>
+                            <div>
+                              <div className="font-semibold text-white">{p.name}</div>
+                              <div className="text-[10px] text-slate-400">Per {p.unit}</div>
+                            </div>
                           </div>
-                        </div>
-                      </td>
-                      <td className="py-3 px-3 font-mono text-slate-400">{p.sku}</td>
-                      <td className="py-3 px-3">
-                        <span className="px-2 py-0.5 rounded-md text-[10px] bg-slate-800 text-slate-300 block font-semibold w-fit">
-                          {p.category}
-                        </span>
-                        {p.subCategory && (
-                          <span className="text-[10px] text-amber-400 font-mono mt-0.5 block">
-                            {p.subCategory}
+                        </td>
+                        <td className="py-3 px-3 font-mono text-slate-400">{p.sku}</td>
+                        <td className="py-3 px-3">
+                          <span className="px-2 py-0.5 rounded-md text-[10px] bg-slate-800 text-slate-300 block font-semibold w-fit">
+                            {p.category}
                           </span>
-                        )}
-                      </td>
-                      <td className="py-3 px-3 text-right font-mono text-slate-400">₹{p.costPrice}</td>
-                      
-                      {/* Directly Editable Selling Price */}
-                      <td className="py-3 px-3 text-right">
-                        <div className="flex items-center justify-end space-x-1 font-mono">
-                          <span className="text-slate-400 font-bold">₹</span>
-                          <input
-                            type="number"
-                            min="0"
-                            step="any"
-                            value={p.price}
-                            onChange={e => {
-                              const val = parseFloat(e.target.value);
-                              updateProductPrice(p.id, isNaN(val) ? 0 : val);
-                            }}
-                            className="w-24 text-right bg-slate-950 font-extrabold text-emerald-400 text-xs py-1 px-2 border border-slate-700 rounded-lg focus:outline-none focus:border-emerald-500 shadow-inner"
-                          />
-                        </div>
-                        <div className="text-[10px] text-slate-400 text-right mt-0.5 font-mono">
-                          {margin}% margin
-                        </div>
-                      </td>
+                          {p.subCategory && (
+                            <span className="text-[10px] text-amber-400 font-mono mt-0.5 block">
+                              {p.subCategory}
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-3 px-3 text-right font-mono text-slate-400">₹{p.costPrice}</td>
+                        
+                        {/* Directly Editable Selling Price */}
+                        <td className="py-3 px-3 text-right">
+                          <div className="flex items-center justify-end space-x-1 font-mono">
+                            <span className="text-slate-400 font-bold">₹</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="any"
+                              value={p.price}
+                              onChange={e => {
+                                const val = parseFloat(e.target.value);
+                                updateProductPrice(p.id, isNaN(val) ? 0 : val);
+                              }}
+                              className="w-24 text-right bg-slate-950 font-extrabold text-emerald-400 text-xs py-1 px-2 border border-slate-700 rounded-lg focus:outline-none focus:border-emerald-500 shadow-inner"
+                            />
+                          </div>
+                          <div className="text-[10px] text-slate-400 text-right mt-0.5 font-mono">
+                            {margin}% margin
+                          </div>
+                        </td>
 
-                      {/* Directly Editable Stock Level */}
-                      <td className="py-3 px-3 text-center">
-                        <div className="flex items-center justify-center space-x-1.5">
-                          <input
-                            type="number"
-                            min="0"
-                            value={p.stock}
-                            onChange={e => {
-                              const val = parseInt(e.target.value, 10);
-                              updateProductStock(p.id, isNaN(val) ? 0 : val);
-                            }}
-                            className={`w-24 text-center font-mono font-black text-xs py-1 px-2 rounded-lg border focus:outline-none shadow-inner ${
-                              p.stock === 0
-                                ? 'bg-red-950/40 border-red-500/50 text-red-400'
-                                : p.stock <= 10
-                                ? 'bg-amber-950/40 border-amber-500/50 text-amber-400'
-                                : 'bg-slate-950 border-slate-700 text-white focus:border-indigo-500'
-                            }`}
-                          />
-                          <span className="text-[10px] text-slate-400 font-mono">{p.unit}s</span>
-                        </div>
-                        <div className="mt-1">
-                          <span
-                            className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${
-                              p.stock === 0
-                                ? 'bg-red-500/20 text-red-400'
-                                : p.stock <= 10
-                                ? 'bg-amber-500/20 text-amber-400'
-                                : 'bg-emerald-500/20 text-emerald-400'
-                            }`}
+                        {/* Directly Editable Stock Level */}
+                        <td className="py-3 px-3 text-center">
+                          <div className="flex items-center justify-center space-x-1.5">
+                            <input
+                              type="number"
+                              min="0"
+                              value={p.stock}
+                              onChange={e => {
+                                const val = parseInt(e.target.value, 10);
+                                updateProductStock(p.id, isNaN(val) ? 0 : val);
+                              }}
+                              className={`w-24 text-center font-mono font-black text-xs py-1 px-2 rounded-lg border focus:outline-none shadow-inner ${
+                                p.stock === 0
+                                  ? 'bg-red-950/40 border-red-500/50 text-red-400'
+                                  : p.stock <= 10
+                                  ? 'bg-amber-950/40 border-amber-500/50 text-amber-400'
+                                  : 'bg-slate-950 border-slate-700 text-white focus:border-indigo-500'
+                              }`}
+                            />
+                            <span className="text-[10px] text-slate-400 font-mono">{p.unit}s</span>
+                          </div>
+                          <div className="mt-1">
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${
+                                p.stock === 0
+                                  ? 'bg-red-500/20 text-red-400'
+                                  : p.stock <= 10
+                                  ? 'bg-amber-500/20 text-amber-400'
+                                  : 'bg-emerald-500/20 text-emerald-400'
+                              }`}
+                            >
+                              {p.stock === 0 ? 'Out of Stock' : p.stock <= 10 ? 'Low Stock' : 'In Stock'}
+                            </span>
+                          </div>
+                        </td>
+
+                        {/* Action: Delete Item Button */}
+                        <td className="py-3 px-3 text-center">
+                          <button
+                            type="button"
+                            onClick={() => setProductToDelete(p)}
+                            className="p-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 rounded-lg transition"
+                            title="Delete Product"
                           >
-                            {p.stock === 0 ? 'Out of Stock' : p.stock <= 10 ? 'Low Stock' : 'In Stock'}
-                          </span>
-                        </div>
-                      </td>
-
-                      {/* Action: Delete Item Button */}
-                      <td className="py-3 px-3 text-center">
-                        <button
-                          type="button"
-                          onClick={() => setProductToDelete(p)}
-                          className="p-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 rounded-lg transition"
-                          title="Delete Product"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
               </tbody>
             </table>
           </div>
+
+          {/* Inventory Pagination Bar */}
+          {filteredProducts.length > 0 && (
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-800/80 text-xs text-slate-400">
+              <div className="flex items-center space-x-2">
+                <span>
+                  Showing <strong className="text-white">{(inventoryPage - 1) * inventoryPerPage + 1}</strong> – <strong className="text-white">{Math.min(inventoryPage * inventoryPerPage, filteredProducts.length)}</strong> of <strong className="text-white">{filteredProducts.length}</strong> products
+                </span>
+                <select
+                  value={inventoryPerPage}
+                  onChange={e => {
+                    setInventoryPerPage(Number(e.target.value));
+                    setInventoryPage(1);
+                  }}
+                  className="bg-slate-950 border border-slate-800 text-slate-300 text-xs rounded-lg px-2 py-1 focus:outline-none ml-2 font-medium"
+                >
+                  <option value={25}>25 / page</option>
+                  <option value={50}>50 / page</option>
+                  <option value={100}>100 / page</option>
+                </select>
+              </div>
+
+              <div className="flex items-center space-x-1.5">
+                <button
+                  onClick={() => setInventoryPage(p => Math.max(1, p - 1))}
+                  disabled={inventoryPage <= 1}
+                  className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-slate-300 hover:bg-slate-800 disabled:opacity-30 disabled:cursor-not-allowed transition flex items-center space-x-1"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                  <span>Prev</span>
+                </button>
+                <span className="px-2.5 py-1 text-slate-400 font-mono text-xs">
+                  Page <strong className="text-white">{inventoryPage}</strong> of <strong className="text-white">{totalInventoryPages}</strong>
+                </span>
+                <button
+                  onClick={() => setInventoryPage(p => Math.min(totalInventoryPages, p + 1))}
+                  disabled={inventoryPage >= totalInventoryPages}
+                  className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-slate-300 hover:bg-slate-800 disabled:opacity-30 disabled:cursor-not-allowed transition flex items-center space-x-1"
+                >
+                  <span>Next</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          )}
 
         </div>
       )}
@@ -835,7 +1092,7 @@ export const OwnerDashboard: React.FC<{ onViewInvoice: (inv: Invoice) => void }>
               <input
                 type="text"
                 value={gstSearch}
-                onChange={e => setGstSearch(e.target.value)}
+                onChange={e => handleGstSearchChange(e.target.value)}
                 placeholder="Filter by GST invoice ID, customer name, phone or customer GSTIN..."
                 className="w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-amber-500 font-mono"
               />
@@ -845,7 +1102,7 @@ export const OwnerDashboard: React.FC<{ onViewInvoice: (inv: Invoice) => void }>
               {/* Financial Year / Timeframe Filter */}
               <select
                 value={gstTimeframe}
-                onChange={e => setGstTimeframe(e.target.value as any)}
+                onChange={e => handleGstTimeframeChange(e.target.value)}
                 className="bg-slate-950 border border-slate-800 text-slate-300 text-xs rounded-xl p-2 focus:outline-none font-medium"
               >
                 <option value="all">Timeframe: All Dates</option>
@@ -858,7 +1115,7 @@ export const OwnerDashboard: React.FC<{ onViewInvoice: (inv: Invoice) => void }>
               {/* GST Rate Filter */}
               <select
                 value={gstRateFilter}
-                onChange={e => setGstRateFilter(e.target.value)}
+                onChange={e => handleGstRateFilterChange(e.target.value)}
                 className="bg-slate-950 border border-slate-800 text-slate-300 text-xs rounded-xl p-2 focus:outline-none font-medium"
               >
                 <option value="All">All GST Rates</option>
@@ -887,16 +1144,17 @@ export const OwnerDashboard: React.FC<{ onViewInvoice: (inv: Invoice) => void }>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
-                {filteredGstInvoices.length === 0 ? (
+                {paginatedGstInvoices.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="py-8 text-center text-slate-500">
                       No GST Tax Invoices found matching filter criteria.
                     </td>
                   </tr>
                 ) : (
-                  filteredGstInvoices.map(inv => {
+                  paginatedGstInvoices.map(inv => {
                     const cgst = inv.cgstAmount !== undefined ? inv.cgstAmount : inv.taxAmount / 2;
                     const sgst = inv.sgstAmount !== undefined ? inv.sgstAmount : inv.taxAmount / 2;
+                    const isOpening = openingInvoiceId === inv.id;
                     return (
                       <tr key={inv.id} className="hover:bg-slate-800/40 transition">
                         <td className="py-3 px-3 font-mono font-bold text-amber-400">{inv.id}</td>
@@ -938,11 +1196,16 @@ export const OwnerDashboard: React.FC<{ onViewInvoice: (inv: Invoice) => void }>
                         </td>
                         <td className="py-3 px-3 text-center">
                           <button
-                            onClick={() => onViewInvoice(inv)}
-                            className="px-3 py-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded-lg text-[11px] font-bold transition flex items-center justify-center space-x-1 mx-auto"
+                            onClick={() => handleViewInvoiceWithDetails(inv)}
+                            disabled={isOpening}
+                            className="px-3 py-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded-lg text-[11px] font-bold transition flex items-center justify-center space-x-1 mx-auto disabled:opacity-50"
                           >
-                            <Eye className="w-3.5 h-3.5" />
-                            <span>View GST Bill</span>
+                            {isOpening ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <Eye className="w-3.5 h-3.5" />
+                            )}
+                            <span>{isOpening ? 'Loading...' : 'View GST Bill'}</span>
                           </button>
                         </td>
                       </tr>
@@ -952,6 +1215,51 @@ export const OwnerDashboard: React.FC<{ onViewInvoice: (inv: Invoice) => void }>
               </tbody>
             </table>
           </div>
+
+          {/* GST Pagination Bar */}
+          {filteredGstInvoices.length > 0 && (
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-800/80 text-xs text-slate-400">
+              <div className="flex items-center space-x-2">
+                <span>
+                  Showing <strong className="text-white">{(gstPage - 1) * gstPerPage + 1}</strong> – <strong className="text-white">{Math.min(gstPage * gstPerPage, filteredGstInvoices.length)}</strong> of <strong className="text-white">{filteredGstInvoices.length}</strong> GST invoices
+                </span>
+                <select
+                  value={gstPerPage}
+                  onChange={e => {
+                    setGstPerPage(Number(e.target.value));
+                    setGstPage(1);
+                  }}
+                  className="bg-slate-950 border border-slate-800 text-slate-300 text-xs rounded-lg px-2 py-1 focus:outline-none ml-2 font-medium"
+                >
+                  <option value={25}>25 / page</option>
+                  <option value={50}>50 / page</option>
+                  <option value={100}>100 / page</option>
+                </select>
+              </div>
+
+              <div className="flex items-center space-x-1.5">
+                <button
+                  onClick={() => setGstPage(p => Math.max(1, p - 1))}
+                  disabled={gstPage <= 1}
+                  className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-slate-300 hover:bg-slate-800 disabled:opacity-30 disabled:cursor-not-allowed transition flex items-center space-x-1"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                  <span>Prev</span>
+                </button>
+                <span className="px-2.5 py-1 text-slate-400 font-mono text-xs">
+                  Page <strong className="text-white">{gstPage}</strong> of <strong className="text-white">{totalGstPages}</strong>
+                </span>
+                <button
+                  onClick={() => setGstPage(p => Math.min(totalGstPages, p + 1))}
+                  disabled={gstPage >= totalGstPages}
+                  className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-slate-300 hover:bg-slate-800 disabled:opacity-30 disabled:cursor-not-allowed transition flex items-center space-x-1"
+                >
+                  <span>Next</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          )}
 
         </div>
       )}
