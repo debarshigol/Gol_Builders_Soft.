@@ -21,6 +21,7 @@ import {
   Sun,
   Moon,
   Printer,
+  LogOut,
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -38,7 +39,7 @@ export const Header: React.FC<HeaderProps> = ({
   onSearchChange,
   onOpenCart,
 }) => {
-  const { cart, theme, toggleTheme } = useApp();
+  const { cart, theme, toggleTheme, currentOwner, logoutOwner, currentShopkeeper, logoutShopkeeper } = useApp();
   const pathname = usePathname();
   const [timeString, setTimeString] = useState<string>('');
   const [isMenuOpen, setIsMenuOpen] = useState<boolean>(false);
@@ -291,8 +292,51 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           )}
 
-          {/* Owner Mode Status Badge */}
-          {isOwnerActive && (
+          {/* Shopkeeper Mode Status Badge & Logout Button */}
+          {isShopkeeperActive && currentShopkeeper && (
+            <div className="flex items-center space-x-1.5 sm:space-x-2 shrink-0">
+              <div className="shopkeeper-status-pill hidden lg:flex items-center space-x-1.5 px-2.5 sm:px-3 py-1.5 rounded-2xl border font-bold text-xs shadow-sm bg-emerald-950/80 text-emerald-300 border-emerald-500/40">
+                <span className="w-2 h-2 rounded-full animate-pulse bg-emerald-400"></span>
+                <span className="font-extrabold text-white truncate max-w-[120px]">
+                  {currentShopkeeper.name}
+                </span>
+                <span className="text-[10px] text-emerald-400 font-mono">@{currentShopkeeper.username}</span>
+              </div>
+              <button
+                type="button"
+                onClick={logoutShopkeeper}
+                title="Log Out of Shopkeeper Terminal"
+                className="header-logout-btn px-2.5 py-1.5 sm:py-2 rounded-2xl border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 text-red-300 text-xs font-bold transition flex items-center space-x-1 hover:border-red-500/50 cursor-pointer shrink-0"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline text-[11px]">Logout</span>
+              </button>
+            </div>
+          )}
+
+          {/* Owner Mode Status Badge & Logout Button */}
+          {isOwnerActive && currentOwner && (
+            <div className="flex items-center space-x-2">
+              <div className="owner-status-pill flex items-center space-x-1.5 sm:space-x-2 px-2.5 sm:px-3 py-1.5 rounded-2xl border font-bold text-xs shadow-sm transition-all bg-indigo-950/80 text-indigo-300 border-indigo-500/40">
+                <span className="w-2 h-2 rounded-full animate-pulse bg-emerald-400"></span>
+                <span className="hidden md:inline font-extrabold text-white truncate max-w-[120px]">
+                  {currentOwner.name}
+                </span>
+                <span className="text-[10px] text-indigo-300 font-mono">@{currentOwner.username}</span>
+              </div>
+              <button
+                type="button"
+                onClick={logoutOwner}
+                title="Log Out of Owner Control Center"
+                className="header-logout-btn px-2.5 py-1.5 rounded-2xl border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 text-red-300 text-xs font-bold transition flex items-center space-x-1 hover:border-red-500/50 cursor-pointer"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline text-[11px]">Logout</span>
+              </button>
+            </div>
+          )}
+
+          {isOwnerActive && !currentOwner && (
             <div className="flex items-center space-x-2 px-3 sm:px-4 py-1.5 rounded-2xl border font-bold text-xs shadow-sm transition-all bg-indigo-950/80 text-indigo-300 border-indigo-500/40">
               <span className="w-2 h-2 rounded-full animate-pulse bg-indigo-400"></span>
               <span className="flex items-center gap-1.5">

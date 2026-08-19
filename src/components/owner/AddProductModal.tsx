@@ -360,7 +360,7 @@ Water Tank 1000L Triple Layer,Plumbing & MEP,Water Storage Tanks,7500,5800,15,Li
 
         // Header column detection
         const headerCols = parseCsvLine(lines[0]).map(h => h.toLowerCase());
-        
+
         let nameIdx = headerCols.findIndex(h => h.includes('name') || h.includes('item') || h.includes('product'));
         let catIdx = headerCols.findIndex(h => h === 'category' || h.includes('main'));
         let subCatIdx = headerCols.findIndex(h => h.includes('sub'));
@@ -458,7 +458,7 @@ Water Tank 1000L Triple Layer,Plumbing & MEP,Water Storage Tanks,7500,5800,15,Li
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
       <div className="glass-modal rounded-3xl max-w-2xl w-full max-h-[92vh] flex flex-col overflow-hidden shadow-2xl animate-scaleUp text-slate-100 border border-slate-700/60">
-        
+
         {/* Modal Header & Navigation Tabs */}
         <div className="bg-slate-950 px-6 py-4 border-b border-slate-800 flex items-center justify-between">
           <div className="flex items-center space-x-3">
@@ -483,11 +483,10 @@ Water Tank 1000L Triple Layer,Plumbing & MEP,Water Storage Tanks,7500,5800,15,Li
         <div className="bg-slate-900/90 border-b border-slate-800 px-6 py-2 flex items-center space-x-2">
           <button
             onClick={() => setActiveTab('single')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center space-x-1.5 ${
-              activeTab === 'single'
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center space-x-1.5 ${activeTab === 'single'
                 ? 'bg-indigo-600 text-white shadow-md'
                 : 'text-slate-400 hover:text-white hover:bg-slate-800'
-            }`}
+              }`}
           >
             <Plus className="w-4 h-4" />
             <span>Single Product Add</span>
@@ -495,11 +494,10 @@ Water Tank 1000L Triple Layer,Plumbing & MEP,Water Storage Tanks,7500,5800,15,Li
 
           <button
             onClick={() => setActiveTab('bulk')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center space-x-1.5 ${
-              activeTab === 'bulk'
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center space-x-1.5 ${activeTab === 'bulk'
                 ? 'bg-amber-500 text-slate-950 font-black shadow-md shadow-amber-500/20'
                 : 'text-amber-400 hover:text-amber-300 hover:bg-amber-500/10'
-            }`}
+              }`}
           >
             <FileSpreadsheet className="w-4 h-4" />
             <span>Bulk Excel / CSV Upload</span>
@@ -755,7 +753,7 @@ Water Tank 1000L Triple Layer,Plumbing & MEP,Water Storage Tanks,7500,5800,15,Li
         {/* 2. BULK EXCEL / CSV UPLOAD FORM */}
         {activeTab === 'bulk' && (
           <div className="p-6 space-y-6">
-            
+
             {/* Step 1: Download / Copy Template Options */}
             <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 space-y-3">
               <div className="flex items-center justify-between">
@@ -896,8 +894,8 @@ Water Tank 1000L Triple Layer,Plumbing & MEP,Water Storage Tanks,7500,5800,15,Li
                             prod.isValid
                               ? 'hover:bg-slate-900/50'
                               : prod.isDuplicate
-                              ? 'bg-amber-500/10 hover:bg-amber-500/15'
-                              : 'bg-red-500/10 hover:bg-red-500/15'
+                                ? 'bg-amber-500/10 hover:bg-amber-500/15'
+                                : 'bg-red-500/10 hover:bg-red-500/15'
                           }
                         >
                           {/* Image Preview / Drive Link Indicator */}

@@ -1,8 +1,8 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Product, Customer, Invoice, CartItem, PaymentMethod, UserRole, Quotation, QuotationStatus } from '@/types';
-import { initialProducts, initialCustomers, initialInvoices, initialQuotations } from '@/data/mockData';
+import { Product, Customer, Invoice, CartItem, PaymentMethod, UserRole, Quotation, QuotationStatus, OwnerUser, ShopkeeperUser } from '@/types';
+import { initialProducts, initialCustomers, initialInvoices, initialQuotations, initialOwnerUsers } from '@/data/mockData';
 import { supabase, isSupabaseConfigured } from '@/lib/supabaseClient';
 
 // Helper to map Supabase DB row to Product
@@ -186,11 +186,11 @@ interface AppContextType {
   customers: Customer[];
   invoices: Invoice[];
   quotations: Quotation[];
-  
+
   // Theme State
   theme: 'dark' | 'light';
   toggleTheme: () => void;
-  
+
   // Billing Session State
   phoneSearchTerm: string;
   setPhoneSearchTerm: (term: string) => void;
@@ -267,7 +267,29 @@ interface AppContextType {
   bulkAddProducts: (productsData: Array<Omit<Product, 'id'>>) => void;
   updateProductStock: (productId: string, newStock: number) => void;
   updateProductPrice: (productId: string, newPrice: number) => void;
+  updateProductFull: (productId: string, updates: Partial<Omit<Product, 'id'>>) => Promise<void>;
   deleteProduct: (productId: string) => void;
+
+  // Owner Authentication State & Actions
+  currentOwner: OwnerUser | null;
+  isOwnerAuthenticated: boolean;
+  isAuthLoading: boolean;
+  loginOwner: (username: string, password: string, remember?: boolean) => Promise<{ success: boolean; error?: string; user?: OwnerUser }>;
+  logoutOwner: () => void;
+
+  // Shopkeeper Authentication & Access Management
+  currentShopkeeper: ShopkeeperUser | null;
+  isShopkeeperAuthenticated: boolean;
+  isShopkeeperAuthLoading: boolean;
+  shopkeeperUsers: ShopkeeperUser[];
+  isLoadingShopkeeperUsers: boolean;
+  fetchShopkeeperUsers: () => Promise<ShopkeeperUser[]>;
+  createShopkeeperUser: (data: { name: string; username: string; password: string }) => Promise<{ success: boolean; error?: string; user?: ShopkeeperUser }>;
+  deleteShopkeeperUser: (id: string) => Promise<{ success: boolean; error?: string }>;
+  toggleShopkeeperUserStatus: (id: string, isActive: boolean) => Promise<{ success: boolean; error?: string }>;
+  resetShopkeeperPassword: (id: string, newPassword: string) => Promise<{ success: boolean; error?: string }>;
+  loginShopkeeper: (username: string, password: string, remember?: boolean) => Promise<{ success: boolean; error?: string; user?: ShopkeeperUser }>;
+  logoutShopkeeper: () => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -295,7 +317,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [cart, setCart] = useState<CartItem[]>([]);
   const [lastGeneratedInvoice, setLastGeneratedInvoice] = useState<Invoice | null>(null);
 
-  // ── Step 1: Immediate Synchronous Cache Hydration (0ms Latency) ──────────────
+  // Owner Authentication State
+  const [currentOwner, setCurrentOwner] = useState<OwnerUser | null>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState<boolean>(true);
+
+  // Shopkeeper Authentication & Management State
+  const [currentShopkeeper, setCurrentShopkeeper] = useState<ShopkeeperUser | null>(null);
+  const [isShopkeeperAuthLoading, setIsShopkeeperAuthLoading] = useState<boolean>(true);
+  const [shopkeeperUsers, setShopkeeperUsers] = useState<ShopkeeperUser[]>([]);
+  const [isLoadingShopkeeperUsers, setIsLoadingShopkeeperUsers] = useState<boolean>(false);
+
+  // ── Step 1: Immediate Synchronous Cache Hydration (0ms Latency) & Session Recovery ──
   useEffect(() => {
     setIsMounted(true);
     const store = initMemoryCache();
@@ -304,7 +336,74 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (store.invoices.length > 0) setInvoices(store.invoices);
     if (store.quotations.length > 0) setQuotations(store.quotations);
     setTheme(CacheManager.getTheme());
+
+    // Restore Owner Session
+    try {
+      if (typeof window !== 'undefined') {
+        const savedSession = localStorage.getItem('gol_builders_owner_session');
+        if (savedSession) {
+          const parsed = JSON.parse(savedSession);
+          if (parsed && parsed.username) {
+            setCurrentOwner(parsed);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to restore owner session:', e);
+    } finally {
+      setIsAuthLoading(false);
+    }
+
+    // Restore Shopkeeper Session (with 8-hour expiration check)
+    try {
+      if (typeof window !== 'undefined') {
+        const savedSkSession = localStorage.getItem('gol_builders_shopkeeper_session');
+        if (savedSkSession) {
+          const parsedSk = JSON.parse(savedSkSession);
+          if (parsedSk && parsedSk.username) {
+            // Check if 8-hour session has expired
+            if (parsedSk.expiresAt && Date.now() > parsedSk.expiresAt) {
+              localStorage.removeItem('gol_builders_shopkeeper_session');
+              setCurrentShopkeeper(null);
+            } else {
+              setCurrentShopkeeper(parsedSk);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to restore shopkeeper session:', e);
+    } finally {
+      setIsShopkeeperAuthLoading(false);
+    }
   }, []);
+
+  // ── Auto Logout Monitor for Shopkeeper 8-Hour Session ────────────────────────
+  useEffect(() => {
+    if (!currentShopkeeper) return;
+
+    const checkShopkeeperExpiry = () => {
+      try {
+        const savedSkSession = localStorage.getItem('gol_builders_shopkeeper_session');
+        if (savedSkSession) {
+          const parsedSk = JSON.parse(savedSkSession);
+          if (parsedSk && parsedSk.expiresAt && Date.now() > parsedSk.expiresAt) {
+            setCurrentShopkeeper(null);
+            localStorage.removeItem('gol_builders_shopkeeper_session');
+          }
+        }
+      } catch (e) {}
+    };
+
+    // Check every 30 seconds & on browser tab focus
+    const interval = setInterval(checkShopkeeperExpiry, 30000);
+    window.addEventListener('focus', checkShopkeeperExpiry);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', checkShopkeeperExpiry);
+    };
+  }, [currentShopkeeper]);
 
   // ── Step 2: Intelligent Priority Data Loading Pipeline ────────────────────────
   useEffect(() => {
@@ -333,7 +432,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           console.warn('Product load error:', e);
         }
 
-        // ★ STAGE 2 (DEFERRED ASYNC): Load Customers, Invoices (Recent 50), Quotations in Background
+        // ★ STAGE 2 (DEFERRED ASYNC): Load Customers, Invoices, Quotations in Background
         setTimeout(async () => {
           try {
             const [custRes, invRes, quotRes] = await Promise.allSettled([
@@ -342,8 +441,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 .order('created_at', { ascending: false }),
               sb.from('invoices')
                 .select('id,customer_phone,customer_name,customer_address,customer_gstin,subtotal,tax_rate,tax_amount,cgst_amount,sgst_amount,discount,total_amount,amount_paid,due_amount,payment_method,payment_status,is_settlement_receipt,is_gst_invoice,previous_due,status,created_at')
-                .order('created_at', { ascending: false })
-                .limit(50),
+                .order('created_at', { ascending: false }),
               sb.from('quotations')
                 .select('id,customer_name,customer_phone,customer_address,notes,items,subtotal,tax_rate,tax_amount,discount,total_amount,created_at,valid_until,status,is_targeted,owner_call_log')
                 .order('created_at', { ascending: false }),
@@ -356,7 +454,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             }
             if (invRes.status === 'fulfilled' && invRes.value.data && !invRes.value.error) {
               const mapped = invRes.value.data.map(mapDbInvoice);
-              if (mapped.length < 50) setHasMoreInvoices(false);
+              setHasMoreInvoices(false);
               setInvoices(mapped);
               CacheManager.setInvoices(mapped);
             }
@@ -365,17 +463,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               setQuotations(mapped);
               CacheManager.setQuotations(mapped);
             }
-          } catch (e) {}
+          } catch (e) { }
         }, 100);
 
       } else {
-        // ★ TIER 1 PRIORITY (OWNER): Key Sales KPI Invoices (Recent 50) + Inventory Overview + Customer Dues
+        // ★ TIER 1 PRIORITY (OWNER): Complete Invoices + Inventory Overview + Customer Dues
         try {
           const [invRes, prodRes, custRes] = await Promise.allSettled([
             sb.from('invoices')
               .select('id,customer_phone,customer_name,customer_address,customer_gstin,subtotal,tax_rate,tax_amount,cgst_amount,sgst_amount,discount,total_amount,amount_paid,due_amount,payment_method,payment_status,is_settlement_receipt,is_gst_invoice,previous_due,status,created_at')
-              .order('created_at', { ascending: false })
-              .limit(50),
+              .order('created_at', { ascending: false }),
             sb.from('products')
               .select('id,name,category,sub_category,price,cost_price,stock,item_sold,sku,unit,image_emoji,image_url,created_at')
               .order('item_sold', { ascending: false }),
@@ -386,7 +483,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
           if (invRes.status === 'fulfilled' && invRes.value.data && !invRes.value.error) {
             const mapped = invRes.value.data.map(mapDbInvoice);
-            if (mapped.length < 50) setHasMoreInvoices(false);
+            setHasMoreInvoices(false);
             setInvoices(mapped);
             CacheManager.setInvoices(mapped);
           }
@@ -417,7 +514,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               setQuotations(mapped);
               CacheManager.setQuotations(mapped);
             }
-          } catch (e) {}
+          } catch (e) { }
         }, 150);
       }
     };
@@ -715,7 +812,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (targetProd) {
           const newStock = Math.max(0, targetProd.stock - cartItem.quantity);
           const newItemSold = (targetProd.itemSold || 0) + cartItem.quantity;
-          
+
           sb.from('products')
             .update({ stock: newStock, item_sold: newItemSold })
             .eq('id', targetProd.id)
@@ -1123,9 +1220,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             status: newStatus,
             ownerCallLog: ownerNotes
               ? {
-                  lastCalledAt: new Date().toISOString(),
-                  ownerNotes,
-                }
+                lastCalledAt: new Date().toISOString(),
+                ownerNotes,
+              }
               : q.ownerCallLog,
           };
           if (isSupabaseConfigured && supabase) {
@@ -1221,6 +1318,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const updateProductFull = async (productId: string, updates: Partial<Omit<Product, 'id'>>): Promise<void> => {
+    setProducts(prev => {
+      const updated = prev.map(p => (p.id === productId ? { ...p, ...updates } : p));
+      CacheManager.setProducts(updated);
+      return updated;
+    });
+
+    if (isSupabaseConfigured && supabase) {
+      const dbUpdates: Record<string, unknown> = {};
+      if (updates.name !== undefined) dbUpdates.name = updates.name;
+      if (updates.sku !== undefined) dbUpdates.sku = updates.sku;
+      if (updates.category !== undefined) dbUpdates.category = updates.category;
+      if (updates.subCategory !== undefined) dbUpdates.sub_category = updates.subCategory;
+      if (updates.costPrice !== undefined) dbUpdates.cost_price = updates.costPrice;
+      if (updates.price !== undefined) dbUpdates.price = updates.price;
+      if (updates.stock !== undefined) dbUpdates.stock = updates.stock;
+      if (updates.unit !== undefined) dbUpdates.unit = updates.unit;
+      if (updates.imageEmoji !== undefined) dbUpdates.image_emoji = updates.imageEmoji;
+      if (updates.imageUrl !== undefined) dbUpdates.image_url = updates.imageUrl || null;
+
+      await supabase.from('products').update(dbUpdates).eq('id', productId);
+    }
+  };
+
   const deleteProduct = (productId: string) => {
     setProducts(prev => {
       const updated = prev.filter(p => p.id !== productId);
@@ -1231,6 +1352,369 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (isSupabaseConfigured && supabase) {
       supabase.from('products').delete().eq('id', productId).then();
+    }
+  };
+
+  // ── Owner Authentication Handlers ──────────────────────────────────────────
+  const loginOwner = async (
+    usernameInput: string,
+    passwordInput: string,
+    remember: boolean = true
+  ): Promise<{ success: boolean; error?: string; user?: OwnerUser }> => {
+    const trimmedUser = usernameInput.trim();
+    const cleanPass = passwordInput.trim();
+
+    if (!trimmedUser || !cleanPass) {
+      return { success: false, error: 'Please enter both Username and Password.' };
+    }
+
+    try {
+      // 1. STEP 1: Query database table 'owner_users' for matching username
+      if (isSupabaseConfigured && supabase) {
+        try {
+          const { data, error } = await supabase
+            .from('owner_users')
+            .select('id, username, password, name, role, is_active, created_at, last_login')
+            .ilike('username', trimmedUser)
+            .maybeSingle();
+
+          if (!error && data) {
+            // STEP 2: Username exists in DB -> Validate active status & password
+            if (data.is_active === false) {
+              return { success: false, error: `Account @${data.username} has been deactivated. Contact system admin.` };
+            }
+
+            if (data.password !== cleanPass) {
+              return { success: false, error: 'Incorrect password. Please verify and try again.' };
+            }
+
+            // STEP 3: Password matches -> Grant access & update last login
+            const authenticatedUser: OwnerUser = {
+              id: data.id,
+              username: data.username,
+              name: data.name,
+              role: data.role || 'owner',
+              isActive: data.is_active,
+              createdAt: data.created_at,
+              lastLogin: new Date().toISOString(),
+            };
+
+            // Update last_login timestamp in Supabase
+            supabase
+              .from('owner_users')
+              .update({ last_login: authenticatedUser.lastLogin })
+              .eq('id', data.id)
+              .then();
+
+            setCurrentOwner(authenticatedUser);
+            if (remember && typeof window !== 'undefined') {
+              try {
+                localStorage.setItem('gol_builders_owner_session', JSON.stringify(authenticatedUser));
+              } catch (e) {}
+            }
+            return { success: true, user: authenticatedUser };
+          }
+        } catch (dbErr) {
+          console.warn('Supabase query error during login:', dbErr);
+        }
+      }
+
+      // 2. Fallback check against initial owners (for offline or local testing)
+      const matchedLocal = initialOwnerUsers.find(
+        u => u.username.toLowerCase() === trimmedUser.toLowerCase()
+      );
+
+      if (matchedLocal) {
+        if (matchedLocal.isActive === false) {
+          return { success: false, error: `Account @${matchedLocal.username} is inactive.` };
+        }
+        if (matchedLocal.password !== cleanPass) {
+          return { success: false, error: 'Incorrect password. Please verify and try again.' };
+        }
+
+        const authenticatedUser: OwnerUser = {
+          id: matchedLocal.id,
+          username: matchedLocal.username,
+          name: matchedLocal.name,
+          role: matchedLocal.role,
+          isActive: matchedLocal.isActive,
+          lastLogin: new Date().toISOString(),
+        };
+
+        setCurrentOwner(authenticatedUser);
+        if (remember && typeof window !== 'undefined') {
+          try {
+            localStorage.setItem('gol_builders_owner_session', JSON.stringify(authenticatedUser));
+          } catch (e) {}
+        }
+        return { success: true, user: authenticatedUser };
+      }
+
+      return { success: false, error: `Username "${trimmedUser}" not found in Owner Database.` };
+    } catch (err: any) {
+      console.error('Login process error:', err);
+      return { success: false, error: err.message || 'Authentication error. Please try again.' };
+    }
+  };
+
+  const logoutOwner = () => {
+    setCurrentOwner(null);
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.removeItem('gol_builders_owner_session');
+      } catch (e) {}
+    }
+  };
+
+  // ── Shopkeeper Access Management & Authentication Handlers ──────────────────
+  const fetchShopkeeperUsers = async (): Promise<ShopkeeperUser[]> => {
+    if (!isSupabaseConfigured || !supabase) return [];
+    setIsLoadingShopkeeperUsers(true);
+    try {
+      const { data, error } = await supabase
+        .from('shopkeeper_users')
+        .select('id, name, username, password, role, is_active, created_at, last_login, created_by')
+        .order('created_at', { ascending: false });
+
+      if (!error && data) {
+        const mapped: ShopkeeperUser[] = data.map(row => ({
+          id: row.id,
+          name: row.name,
+          username: row.username,
+          password: row.password,
+          role: 'shopkeeper',
+          isActive: row.is_active,
+          createdAt: row.created_at,
+          lastLogin: row.last_login,
+          createdBy: row.created_by,
+        }));
+        setShopkeeperUsers(mapped);
+        return mapped;
+      }
+    } catch (e) {
+      console.warn('Failed to fetch shopkeeper users:', e);
+    } finally {
+      setIsLoadingShopkeeperUsers(false);
+    }
+    return [];
+  };
+
+  const createShopkeeperUser = async (data: {
+    name: string;
+    username: string;
+    password: string;
+  }): Promise<{ success: boolean; error?: string; user?: ShopkeeperUser }> => {
+    const trimmedName = data.name.trim();
+    const trimmedUser = data.username.trim();
+    const cleanPass = data.password.trim();
+
+    if (!trimmedName || !trimmedUser || !cleanPass) {
+      return { success: false, error: 'Full Name, User ID (Username), and Password are all required.' };
+    }
+
+    if (cleanPass.length < 4) {
+      return { success: false, error: 'Password must be at least 4 characters long.' };
+    }
+
+    if (!isSupabaseConfigured || !supabase) {
+      return { success: false, error: 'Supabase database is not configured.' };
+    }
+
+    try {
+      // Check if username already exists in shopkeeper_users
+      const { data: existingUser } = await supabase
+        .from('shopkeeper_users')
+        .select('id, username')
+        .ilike('username', trimmedUser)
+        .maybeSingle();
+
+      if (existingUser) {
+        return { success: false, error: `Username "${trimmedUser}" is already taken. Please choose another.` };
+      }
+
+      const newId = `sk-${Date.now()}`;
+      const payload = {
+        id: newId,
+        name: trimmedName,
+        username: trimmedUser,
+        password: cleanPass,
+        role: 'shopkeeper',
+        is_active: true,
+        created_at: new Date().toISOString(),
+        created_by: currentOwner ? `${currentOwner.name} (@${currentOwner.username})` : 'Owner',
+      };
+
+      const { error: insertError } = await supabase.from('shopkeeper_users').insert([payload]);
+
+      if (insertError) {
+        console.error('Insert shopkeeper error:', insertError);
+        return { success: false, error: insertError.message || 'Failed to save shopkeeper user to database.' };
+      }
+
+      const createdUser: ShopkeeperUser = {
+        id: newId,
+        name: trimmedName,
+        username: trimmedUser,
+        password: cleanPass,
+        role: 'shopkeeper',
+        isActive: true,
+        createdAt: payload.created_at,
+        createdBy: payload.created_by,
+      };
+
+      setShopkeeperUsers(prev => [createdUser, ...prev]);
+      return { success: true, user: createdUser };
+    } catch (err: any) {
+      console.error('Create shopkeeper error:', err);
+      return { success: false, error: err.message || 'An error occurred while creating shopkeeper account.' };
+    }
+  };
+
+  const deleteShopkeeperUser = async (id: string): Promise<{ success: boolean; error?: string }> => {
+    if (!isSupabaseConfigured || !supabase) {
+      setShopkeeperUsers(prev => prev.filter(u => u.id !== id));
+      return { success: true };
+    }
+    try {
+      const { error } = await supabase.from('shopkeeper_users').delete().eq('id', id);
+      if (error) throw error;
+      setShopkeeperUsers(prev => prev.filter(u => u.id !== id));
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e.message || 'Failed to delete shopkeeper user.' };
+    }
+  };
+
+  const toggleShopkeeperUserStatus = async (id: string, isActive: boolean): Promise<{ success: boolean; error?: string }> => {
+    if (!isSupabaseConfigured || !supabase) {
+      setShopkeeperUsers(prev => prev.map(u => u.id === id ? { ...u, isActive } : u));
+      return { success: true };
+    }
+    try {
+      const { error } = await supabase.from('shopkeeper_users').update({ is_active: isActive }).eq('id', id);
+      if (error) throw error;
+      setShopkeeperUsers(prev => prev.map(u => u.id === id ? { ...u, isActive } : u));
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e.message || 'Failed to update shopkeeper status.' };
+    }
+  };
+
+  const resetShopkeeperPassword = async (
+    id: string,
+    newPassword: string
+  ): Promise<{ success: boolean; error?: string }> => {
+    const cleanPass = newPassword.trim();
+    if (!cleanPass) {
+      return { success: false, error: 'Password cannot be empty.' };
+    }
+    if (cleanPass.length < 4) {
+      return { success: false, error: 'Password must be at least 4 characters long.' };
+    }
+
+    if (!isSupabaseConfigured || !supabase) {
+      setShopkeeperUsers(prev =>
+        prev.map(u => (u.id === id ? { ...u, password: cleanPass } : u))
+      );
+      return { success: true };
+    }
+
+    try {
+      const { error } = await supabase
+        .from('shopkeeper_users')
+        .update({ password: cleanPass })
+        .eq('id', id);
+
+      if (error) throw error;
+
+      setShopkeeperUsers(prev =>
+        prev.map(u => (u.id === id ? { ...u, password: cleanPass } : u))
+      );
+      return { success: true };
+    } catch (e: any) {
+      console.error('Reset password error:', e);
+      return { success: false, error: e.message || 'Failed to update password in database.' };
+    }
+  };
+
+  const loginShopkeeper = async (
+    usernameInput: string,
+    passwordInput: string,
+    remember: boolean = true
+  ): Promise<{ success: boolean; error?: string; user?: ShopkeeperUser }> => {
+    const trimmedUser = usernameInput.trim();
+    const cleanPass = passwordInput.trim();
+
+    if (!trimmedUser || !cleanPass) {
+      return { success: false, error: 'Please enter both Username and Password.' };
+    }
+
+    try {
+      // 1. STEP 1: Query database table 'shopkeeper_users'
+      if (isSupabaseConfigured && supabase) {
+        try {
+          const { data, error } = await supabase
+            .from('shopkeeper_users')
+            .select('id, name, username, password, role, is_active, created_at, last_login, created_by')
+            .ilike('username', trimmedUser)
+            .maybeSingle();
+
+          if (!error && data) {
+            // STEP 2: Validate active status & password
+            if (data.is_active === false) {
+              return { success: false, error: `Account @${data.username} has been deactivated. Please contact store owner.` };
+            }
+
+            if (data.password !== cleanPass) {
+              return { success: false, error: 'Incorrect password. Please verify and try again.' };
+            }
+
+            // STEP 3: Grant access & update last login (8-Hour Shift Session)
+            const SHOPKEEPER_SESSION_DURATION_MS = 8 * 60 * 60 * 1000; // 8 Hours
+            const authenticatedUser: ShopkeeperUser = {
+              id: data.id,
+              name: data.name,
+              username: data.username,
+              role: 'shopkeeper',
+              isActive: data.is_active,
+              createdAt: data.created_at,
+              lastLogin: new Date().toISOString(),
+              createdBy: data.created_by,
+              expiresAt: Date.now() + SHOPKEEPER_SESSION_DURATION_MS,
+            };
+
+            supabase
+              .from('shopkeeper_users')
+              .update({ last_login: authenticatedUser.lastLogin })
+              .eq('id', data.id)
+              .then();
+
+            setCurrentShopkeeper(authenticatedUser);
+            if (remember && typeof window !== 'undefined') {
+              try {
+                localStorage.setItem('gol_builders_shopkeeper_session', JSON.stringify(authenticatedUser));
+              } catch (e) {}
+            }
+            return { success: true, user: authenticatedUser };
+          }
+        } catch (dbErr) {
+          console.warn('Supabase shopkeeper auth query error:', dbErr);
+        }
+      }
+
+      return { success: false, error: `Username "${trimmedUser}" not found in Shopkeeper Database.` };
+    } catch (err: any) {
+      console.error('Shopkeeper login error:', err);
+      return { success: false, error: err.message || 'Authentication error. Please try again.' };
+    }
+  };
+
+  const logoutShopkeeper = () => {
+    setCurrentShopkeeper(null);
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.removeItem('gol_builders_shopkeeper_session');
+      } catch (e) {}
     }
   };
 
@@ -1274,7 +1758,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         bulkAddProducts,
         updateProductStock,
         updateProductPrice,
+        updateProductFull,
         deleteProduct,
+        currentOwner,
+        isOwnerAuthenticated: !!currentOwner,
+        isAuthLoading,
+        loginOwner,
+        logoutOwner,
+        currentShopkeeper,
+        isShopkeeperAuthenticated: !!currentShopkeeper,
+        isShopkeeperAuthLoading,
+        shopkeeperUsers,
+        isLoadingShopkeeperUsers,
+        fetchShopkeeperUsers,
+        createShopkeeperUser,
+        deleteShopkeeperUser,
+        toggleShopkeeperUserStatus,
+        resetShopkeeperPassword,
+        loginShopkeeper,
+        logoutShopkeeper,
       }}
     >
       {children}

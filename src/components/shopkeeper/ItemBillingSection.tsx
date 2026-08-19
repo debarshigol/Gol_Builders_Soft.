@@ -244,26 +244,24 @@ export const ItemBillingSection: React.FC<ItemBillingSectionProps> = ({
               return (
                 <div
                   key={product.id}
-                  className={`p-3 rounded-2xl border transition-all duration-300 flex flex-col justify-between group ${
-                    isOutOfStock
-                      ? 'bg-slate-950/40 border-slate-850 opacity-60'
-                      : cartItem
+                  className={`p-3 rounded-2xl border transition-all duration-300 flex flex-col justify-between group ${isOutOfStock
+                    ? 'bg-slate-950/40 border-slate-850 opacity-60'
+                    : cartItem
                       ? 'bg-slate-950 border-emerald-500/60 shadow-lg shadow-emerald-500/10'
                       : 'bg-slate-950 border-slate-800/90 hover:border-emerald-500/40 hover:shadow-xl'
-                  }`}
+                    }`}
                 >
                   {/* Top 50-60%: Product Image / Emoji Container */}
                   <div className="relative w-full h-28 sm:h-32 rounded-xl bg-slate-900/90 border border-slate-800/80 flex items-center justify-center overflow-hidden p-2.5 group-hover:border-slate-700 transition">
 
                     {/* Stock Badge Overlay Top Right */}
                     <span
-                      className={`absolute top-2 right-2 text-[10px] font-mono px-2 py-0.5 rounded-md font-bold z-10 ${
-                        isOutOfStock
-                          ? 'bg-red-500/20 text-red-400 border border-red-500/30'
-                          : isLowStock
+                      className={`absolute top-2 right-2 text-[10px] font-mono px-2 py-0.5 rounded-md font-bold z-10 ${isOutOfStock
+                        ? 'bg-red-500/20 text-red-400 border border-red-500/30'
+                        : isLowStock
                           ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold'
                           : 'bg-slate-950/90 text-emerald-400 border border-emerald-500/30'
-                      }`}
+                        }`}
                     >
                       {isOutOfStock ? 'Out of Stock' : product.stock > 1000 ? '1000+ left' : `${product.stock} left`}
                     </span>

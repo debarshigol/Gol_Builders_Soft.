@@ -181,21 +181,20 @@ export const QuotationSection: React.FC<QuotationSectionProps> = ({
 
   return (
     <div className="space-y-6 font-sans">
-      
+
       {/* 100% FULL WIDTH PRODUCT CATALOG GRID (POS & QUOTATION STYLE) */}
       <div className="w-full flex flex-col font-sans">
-        
+
         {/* Top Category Filter Tabs */}
         <div className="flex items-center space-x-2 overflow-x-auto pb-3 mb-4 scrollbar-none">
           {categories.map(cat => (
             <button
               key={cat}
               onClick={() => setSelectedCategory(cat)}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
-                selectedCategory === cat
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${selectedCategory === cat
                   ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
                   : 'bg-slate-950 border border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800'
-              }`}
+                }`}
             >
               {cat}
             </button>
@@ -216,13 +215,12 @@ export const QuotationSection: React.FC<QuotationSectionProps> = ({
               return (
                 <div
                   key={product.id}
-                  className={`p-3 rounded-2xl border transition-all duration-300 flex flex-col justify-between group ${
-                    isOutOfStock
+                  className={`p-3 rounded-2xl border transition-all duration-300 flex flex-col justify-between group ${isOutOfStock
                       ? 'bg-slate-950/40 border-slate-850 opacity-60'
                       : quoteItem && quoteItem.quantity > 0
-                      ? 'bg-slate-950 border-amber-500/60 shadow-lg shadow-amber-500/10'
-                      : 'bg-slate-950 border-slate-800/90 hover:border-amber-500/40 hover:shadow-xl'
-                  }`}
+                        ? 'bg-slate-950 border-amber-500/60 shadow-lg shadow-amber-500/10'
+                        : 'bg-slate-950 border-slate-800/90 hover:border-amber-500/40 hover:shadow-xl'
+                    }`}
                 >
                   {/* Image Emoji Container */}
                   <div className="relative w-full h-28 sm:h-32 rounded-xl bg-slate-900/90 border border-slate-800/80 flex items-center justify-center overflow-hidden p-2.5 group-hover:border-slate-700 transition">
@@ -322,7 +320,7 @@ export const QuotationSection: React.FC<QuotationSectionProps> = ({
       {isModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 overflow-y-auto animate-fadeIn">
           <div className="glass-modal border border-slate-700/60 rounded-3xl max-w-2xl w-full max-h-[92vh] flex flex-col shadow-2xl animate-scaleUp text-slate-100 overflow-hidden relative">
-            
+
             {/* Modal Header */}
             <div className="p-4 sm:p-5 bg-slate-950 border-b border-slate-800 flex items-center justify-between shrink-0">
               <div className="flex items-center space-x-3">
@@ -361,7 +359,7 @@ export const QuotationSection: React.FC<QuotationSectionProps> = ({
 
             {/* Modal Body (Scrollable) */}
             <form onSubmit={handleGenerateQuotation} className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-5">
-              
+
               {errorMsg && (
                 <div className="p-3 bg-red-500/15 border border-red-500/30 rounded-xl text-red-300 text-xs flex items-center gap-2 font-medium">
                   <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />

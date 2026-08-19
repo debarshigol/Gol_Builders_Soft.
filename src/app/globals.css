@@ -486,3 +486,303 @@ html.light-mode .invoice-btn-close:hover {
   color: #0f172a !important;
   background-color: #f1f5f9 !important;
 }
+
+/* ==========================================================================
+   LIGHT MODE — ACCENT TEXT COLORS (readability on white backgrounds)
+   Replace pale Tailwind-400/300 colors with darker high-contrast variants
+   ========================================================================== */
+
+/* Amber / Yellow — dark gold instead of pale yellow */
+html.light-mode .text-amber-400,
+html.light-mode .text-amber-300,
+html.light-mode .text-amber-200 {
+  color: #92400e !important;
+  /* dark amber-800 */
+}
+
+html.light-mode .text-amber-500,
+html.light-mode .text-amber-600 {
+  color: #78350f !important;
+  /* amber-900 */
+}
+
+/* Emerald / Green — dark forest green */
+html.light-mode .text-emerald-400,
+html.light-mode .text-emerald-300,
+html.light-mode .text-emerald-200 {
+  color: #065f46 !important;
+  /* emerald-800 */
+}
+
+html.light-mode .text-emerald-500,
+html.light-mode .text-emerald-600 {
+  color: #064e3b !important;
+  /* emerald-900 */
+}
+
+/* Indigo / Purple — dark indigo */
+html.light-mode .text-indigo-400,
+html.light-mode .text-indigo-300,
+html.light-mode .text-indigo-200 {
+  color: #3730a3 !important;
+  /* indigo-800 */
+}
+
+html.light-mode .text-indigo-500,
+html.light-mode .text-indigo-600 {
+  color: #312e81 !important;
+  /* indigo-900 */
+}
+
+/* Cyan / Teal — dark teal */
+html.light-mode .text-cyan-400,
+html.light-mode .text-cyan-300,
+html.light-mode .text-cyan-200 {
+  color: #155e75 !important;
+  /* cyan-800 */
+}
+
+/* Blue */
+html.light-mode .text-blue-400,
+html.light-mode .text-blue-300,
+html.light-mode .text-blue-200 {
+  color: #1e40af !important;
+  /* blue-800 */
+}
+
+/* Red / Rose — dark crimson */
+html.light-mode .text-red-400,
+html.light-mode .text-red-300 {
+  color: #991b1b !important;
+  /* red-800 */
+}
+
+html.light-mode .text-rose-400,
+html.light-mode .text-rose-300 {
+  color: #9f1239 !important;
+  /* rose-800 */
+}
+
+/* Violet / Purple */
+html.light-mode .text-violet-400,
+html.light-mode .text-violet-300 {
+  color: #5b21b6 !important;
+  /* violet-800 */
+}
+
+html.light-mode .text-purple-400,
+html.light-mode .text-purple-300 {
+  color: #6b21a8 !important;
+  /* purple-800 */
+}
+
+/* ==========================================================================
+   LIGHT MODE — ACCENT BADGE / PILL BACKGROUNDS
+   Make tinted badge backgrounds visible & readable on white cards
+   ========================================================================== */
+
+/* Amber badges */
+html.light-mode [class*="bg-amber-500/10"],
+html.light-mode [class*="bg-amber-500/20"] {
+  background-color: #fef3c7 !important;
+  /* amber-100 */
+}
+
+html.light-mode [class*="border-amber-500"] {
+  border-color: #f59e0b !important;
+}
+
+/* Emerald badges */
+html.light-mode [class*="bg-emerald-500/10"],
+html.light-mode [class*="bg-emerald-500/20"] {
+  background-color: #d1fae5 !important;
+  /* emerald-100 */
+}
+
+html.light-mode [class*="border-emerald-500"] {
+  border-color: #10b981 !important;
+}
+
+/* Indigo badges */
+html.light-mode [class*="bg-indigo-500/10"],
+html.light-mode [class*="bg-indigo-500/20"] {
+  background-color: #e0e7ff !important;
+  /* indigo-100 */
+}
+
+html.light-mode [class*="border-indigo-500"] {
+  border-color: #6366f1 !important;
+}
+
+/* Cyan badges */
+html.light-mode [class*="bg-cyan-500/10"],
+html.light-mode [class*="bg-cyan-500/20"] {
+  background-color: #cffafe !important;
+  /* cyan-100 */
+}
+
+/* Red badges */
+html.light-mode [class*="bg-red-500/10"],
+html.light-mode [class*="bg-red-500/20"] {
+  background-color: #fee2e2 !important;
+}
+
+/* ==========================================================================
+   LIGHT MODE — ACTIVE TAB BUTTON READABLE TEXT
+   ========================================================================== */
+html.light-mode button.bg-indigo-600 {
+  background-color: #4f46e5 !important;
+  color: #ffffff !important;
+}
+
+/* Toolbar pill buttons (Sort By / Desc toggle) */
+html.light-mode div[class*="bg-slate-950"][class*="border-slate-800"] {
+  background-color: #f3f4f6 !important;
+  border-color: #d1d5db !important;
+}
+
+/* ==========================================================================
+   LIGHT MODE — SALES TABLE: PAYMENT BADGE & VIEW BILL BUTTON
+   ========================================================================== */
+
+/* Payment method badge (UPI / Cash / Card) */
+html.light-mode .payment-method-badge {
+  background-color: #e0e7ff !important;
+  /* indigo-100 */
+  border-color: #a5b4fc !important;
+  /* indigo-300 */
+  color: #3730a3 !important;
+  /* indigo-800 */
+}
+
+/* View Bill button */
+html.light-mode .view-bill-btn {
+  background-color: #eef2ff !important;
+  /* indigo-50 */
+  border-color: #a5b4fc !important;
+  /* indigo-300 */
+  color: #3730a3 !important;
+  /* indigo-800 */
+}
+
+html.light-mode .view-bill-btn:hover {
+  background-color: #4f46e5 !important;
+  /* indigo-600 */
+  color: #ffffff !important;
+  border-color: #4f46e5 !important;
+}
+
+/* ==========================================================================
+   LIGHT MODE — INVENTORY TABLE: CATEGORY BADGE, STOCK BADGE & DELETE BUTTON
+   ========================================================================== */
+
+/* Category pill badge */
+html.light-mode .inventory-category-badge {
+  background-color: #e0e7ff !important;
+  /* indigo-100 */
+  color: #3730a3 !important;
+  /* indigo-800 */
+}
+
+/* In Stock / Low Stock / Out of Stock status badge */
+html.light-mode .inventory-stock-badge {
+  font-weight: 700 !important;
+}
+
+/* "In Stock" — emerald tint */
+html.light-mode .inventory-stock-badge.bg-emerald-500\/20 {
+  background-color: #d1fae5 !important;
+  color: #065f46 !important;
+}
+
+/* "Low Stock" — amber tint */
+html.light-mode .inventory-stock-badge.bg-amber-500\/20 {
+  background-color: #fef3c7 !important;
+  color: #92400e !important;
+}
+
+/* "Out of Stock" — red tint */
+html.light-mode .inventory-stock-badge.bg-red-500\/20 {
+  background-color: #fee2e2 !important;
+  color: #991b1b !important;
+}
+
+/* Delete button */
+html.light-mode .inventory-delete-btn {
+  background-color: #fee2e2 !important;
+  /* red-100 */
+  border-color: #fca5a5 !important;
+  /* red-300 */
+  color: #991b1b !important;
+  /* red-800 */
+}
+
+html.light-mode .inventory-delete-btn:hover {
+  background-color: #ef4444 !important;
+  color: #ffffff !important;
+  border-color: #ef4444 !important;
+}
+
+/* ==========================================================================
+   LIGHT MODE — HEADER: OWNER/SHOPKEEPER STATUS PILL & LOGOUT BUTTON
+   ========================================================================== */
+
+/* Owner status pill */
+html.light-mode .owner-status-pill {
+  background-color: #eef2ff !important;
+  /* indigo-50 */
+  border-color: #6366f1 !important;
+  /* indigo-500 */
+  color: #3730a3 !important;
+  /* indigo-800 */
+}
+
+html.light-mode .owner-status-pill span.text-white,
+html.light-mode .owner-status-pill span[class*="text-white"] {
+  color: #1e1b4b !important;
+  /* indigo-950 */
+}
+
+html.light-mode .owner-status-pill span[class*="text-indigo-300"],
+html.light-mode .owner-status-pill span[class*="font-mono"] {
+  color: #4338ca !important;
+  /* indigo-700 */
+}
+
+/* Shopkeeper status pill */
+html.light-mode .shopkeeper-status-pill {
+  background-color: #ecfdf5 !important;
+  /* emerald-50 */
+  border-color: #10b981 !important;
+  /* emerald-500 */
+  color: #065f46 !important;
+  /* emerald-800 */
+}
+
+html.light-mode .shopkeeper-status-pill span.text-white,
+html.light-mode .shopkeeper-status-pill span[class*="text-white"] {
+  color: #022c22 !important;
+  /* emerald-950 */
+}
+
+html.light-mode .shopkeeper-status-pill span[class*="text-emerald-400"],
+html.light-mode .shopkeeper-status-pill span[class*="font-mono"] {
+  color: #047857 !important;
+  /* emerald-700 */
+}
+
+/* Logout button */
+html.light-mode .header-logout-btn {
+  background-color: #fee2e2 !important;
+  /* red-100 */
+  border-color: #f87171 !important;
+  /* red-400 */
+  color: #991b1b !important;
+  /* red-800 */
+}
+
+html.light-mode .header-logout-btn:hover {
+  background-color: #ef4444 !important;
+  color: #ffffff !important;
+  border-color: #dc2626 !important;
+}

@@ -32,12 +32,20 @@ import {
   ChevronRight,
   Loader2,
   RefreshCw,
+  Store,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  UserCheck,
+  Phone,
 } from 'lucide-react';
 import dynamic from 'next/dynamic';
+import { ShopkeeperManagement } from './ShopkeeperManagement';
 
 const AddProductModal = dynamic(() => import('./AddProductModal').then(m => m.AddProductModal), { ssr: false });
 const ManualGstModal = dynamic(() => import('./ManualGstModal').then(m => m.ManualGstModal), { ssr: false });
 const QuotationModal = dynamic(() => import('../shopkeeper/QuotationModal').then(m => m.QuotationModal), { ssr: false });
+const EditProductModal = dynamic(() => import('./EditProductModal').then(m => m.EditProductModal), { ssr: false });
 const SalesCharts = dynamic(
   () => import('./SalesCharts').then(m => m.SalesCharts),
   {
@@ -75,10 +83,11 @@ export const OwnerDashboard: React.FC<{ onViewInvoice: (inv: Invoice) => void }>
     isLoadingMoreInvoices,
   } = useApp();
 
-  const [activeTab, setActiveTab] = useState<'analytics' | 'sales' | 'inventory' | 'customers' | 'gst_invoices' | 'quotations'>('analytics');
+  const [activeTab, setActiveTab] = useState<'analytics' | 'sales' | 'inventory' | 'customers' | 'gst_invoices' | 'quotations' | 'shopkeepers'>('analytics');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isManualGstModalOpen, setIsManualGstModalOpen] = useState(false);
   const [productToDelete, setProductToDelete] = useState<Product | null>(null);
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [openingInvoiceId, setOpeningInvoiceId] = useState<string | null>(null);
 
   // Lazy-load invoice line items when View Bill is clicked
@@ -115,8 +124,13 @@ export const OwnerDashboard: React.FC<{ onViewInvoice: (inv: Invoice) => void }>
   const [inventoryPage, setInventoryPage] = useState(1);
   const [inventoryPerPage, setInventoryPerPage] = useState(25);
 
-  // Customer Search
+  // Customer Search, Filters, Sorting & Pagination
   const [customerSearch, setCustomerSearch] = useState('');
+  const [customerSortField, setCustomerSortField] = useState<'due' | 'last_visit' | 'visits' | 'spent' | 'name'>('due');
+  const [customerSortOrder, setCustomerSortOrder] = useState<'desc' | 'asc'>('desc');
+  const [customerDueFilter, setCustomerDueFilter] = useState<'all' | 'has_due' | 'clear'>('all');
+  const [customerPage, setCustomerPage] = useState(1);
+  const [customerPerPage, setCustomerPerPage] = useState(25);
 
   // GST Invoices Search, Timeframe Filters & Pagination
   const [gstSearch, setGstSearch] = useState('');
@@ -133,6 +147,29 @@ export const OwnerDashboard: React.FC<{ onViewInvoice: (inv: Invoice) => void }>
   const handleInventorySearchChange = (val: string) => { setInventorySearch(val); setInventoryPage(1); };
   const handleInventoryCatChange = (val: string) => { setInventoryCategory(val); setInventoryPage(1); };
   const handleInventoryStockFilterChange = (val: 'all' | 'low_stock' | 'out_of_stock' | 'in_stock') => { setInventoryStockFilter(val); setInventoryPage(1); };
+
+  const handleCustomerSearchChange = (val: string) => { setCustomerSearch(val); setCustomerPage(1); };
+  const handleCustomerSortChange = (combinedValue: string) => {
+    const lastUnderscore = combinedValue.lastIndexOf('_');
+    const field = combinedValue.substring(0, lastUnderscore) as 'due' | 'last_visit' | 'visits' | 'spent' | 'name';
+    const order = combinedValue.substring(lastUnderscore + 1) as 'desc' | 'asc';
+    setCustomerSortField(field);
+    setCustomerSortOrder(order);
+    setCustomerPage(1);
+  };
+  const handleColumnHeaderSort = (field: 'due' | 'last_visit' | 'visits' | 'spent' | 'name') => {
+    if (customerSortField === field) {
+      setCustomerSortOrder(prev => (prev === 'desc' ? 'asc' : 'desc'));
+    } else {
+      setCustomerSortField(field);
+      setCustomerSortOrder(field === 'name' ? 'asc' : 'desc');
+    }
+    setCustomerPage(1);
+  };
+  const handleCustomerDueFilterChange = (val: 'all' | 'has_due' | 'clear') => {
+    setCustomerDueFilter(val);
+    setCustomerPage(1);
+  };
 
   const handleGstSearchChange = (val: string) => { setGstSearch(val); setGstPage(1); };
   const handleGstTimeframeChange = (val: any) => { setGstTimeframe(val); setGstPage(1); };
@@ -281,16 +318,114 @@ export const OwnerDashboard: React.FC<{ onViewInvoice: (inv: Invoice) => void }>
     return filteredProducts.slice(start, start + inventoryPerPage);
   }, [filteredProducts, inventoryPage, inventoryPerPage]);
 
-  // Filter Customers
+  // Fast Customer Invoices Telemetry Index Map
+  const customerInvoiceMap = useMemo(() => {
+    const map = new Map<string, Invoice[]>();
+    invoices.forEach(inv => {
+      const cleanPhone = (inv.customerPhone || '').trim().replace(/\D/g, '');
+      if (!cleanPhone) return;
+      const existing = map.get(cleanPhone) || [];
+      existing.push(inv);
+      map.set(cleanPhone, existing);
+    });
+    return map;
+  }, [invoices]);
+
+  // Enriched Customers with telemetry (Visits, Spend, Last Visit Date)
+  const enrichedCustomers = useMemo(() => {
+    return customers.map(c => {
+      const cleanPhone = (c.phone || '').trim().replace(/\D/g, '');
+      const custInvoices = customerInvoiceMap.get(cleanPhone) || [];
+
+      // Total visits
+      const actualVisits = custInvoices.filter(i => !i.isSettlementReceipt).length;
+      const totalVisits = Math.max(c.totalPurchases || 0, actualVisits);
+
+      // Lifetime spend
+      const actualSpent = custInvoices
+        .filter(i => !i.isSettlementReceipt)
+        .reduce((sum, i) => sum + i.totalAmount, 0);
+      const lifetimeSpent = Math.max(c.totalSpent || 0, actualSpent);
+
+      // Last visit date
+      let lastVisitDate: Date | null = null;
+      if (custInvoices.length > 0) {
+        const validDates = custInvoices
+          .map(i => new Date(i.createdAt).getTime())
+          .filter(t => !isNaN(t));
+        if (validDates.length > 0) {
+          lastVisitDate = new Date(Math.max(...validDates));
+        }
+      }
+      if (!lastVisitDate && c.registeredAt) {
+        const regDate = new Date(c.registeredAt);
+        if (!isNaN(regDate.getTime())) lastVisitDate = regDate;
+      }
+
+      return {
+        ...c,
+        actualVisits,
+        totalVisits,
+        lifetimeSpent,
+        lastVisitDate,
+        lastVisitFormatted: lastVisitDate
+          ? lastVisitDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+          : 'No visits',
+      };
+    });
+  }, [customers, customerInvoiceMap]);
+
+  // Filter and Sort Customers
   const filteredCustomers = useMemo(() => {
     const sLower = customerSearch.toLowerCase().trim();
-    if (!sLower) return customers;
-    return customers.filter(c =>
-      c.name.toLowerCase().includes(sLower) ||
-      c.phone.includes(sLower) ||
-      c.address.toLowerCase().includes(sLower)
-    );
-  }, [customers, customerSearch]);
+
+    let result = enrichedCustomers.filter(c => {
+      // 1. Search Query
+      if (sLower) {
+        const matchName = (c.name || '').toLowerCase().includes(sLower);
+        const matchPhone = (c.phone || '').includes(sLower);
+        const matchAddress = (c.address || '').toLowerCase().includes(sLower);
+        if (!matchName && !matchPhone && !matchAddress) return false;
+      }
+
+      // 2. Due Status Filter
+      if (customerDueFilter === 'has_due') {
+        if (!c.totalDue || c.totalDue <= 0) return false;
+      } else if (customerDueFilter === 'clear') {
+        if (c.totalDue && c.totalDue > 0) return false;
+      }
+
+      return true;
+    });
+
+    // 3. Sorting
+    result.sort((a, b) => {
+      let diff = 0;
+      if (customerSortField === 'due') {
+        diff = (b.totalDue || 0) - (a.totalDue || 0);
+      } else if (customerSortField === 'last_visit') {
+        const timeA = a.lastVisitDate ? a.lastVisitDate.getTime() : 0;
+        const timeB = b.lastVisitDate ? b.lastVisitDate.getTime() : 0;
+        diff = timeB - timeA;
+      } else if (customerSortField === 'visits') {
+        diff = b.totalVisits - a.totalVisits;
+      } else if (customerSortField === 'spent') {
+        diff = b.lifetimeSpent - a.lifetimeSpent;
+      } else if (customerSortField === 'name') {
+        diff = (a.name || '').localeCompare(b.name || '');
+      }
+
+      return customerSortOrder === 'asc' ? -diff : diff;
+    });
+
+    return result;
+  }, [enrichedCustomers, customerSearch, customerDueFilter, customerSortField, customerSortOrder]);
+
+  const totalCustomerPages = Math.max(1, Math.ceil(filteredCustomers.length / customerPerPage));
+  const paginatedCustomers = useMemo(() => {
+    const start = (customerPage - 1) * customerPerPage;
+    return filteredCustomers.slice(start, start + customerPerPage);
+  }, [filteredCustomers, customerPage, customerPerPage]);
 
   // Filter GST Invoices & Financial Year Computations
   const filteredGstInvoices = useMemo(() => {
@@ -342,10 +477,10 @@ export const OwnerDashboard: React.FC<{ onViewInvoice: (inv: Invoice) => void }>
 
   return (
     <div className="space-y-6">
-      
+
       {/* 1. TOP ANALYTICS OVERVIEW CARDS */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 sm:gap-3.5">
-        
+
         {/* Total Revenue */}
         <div className="glass-panel rounded-2xl p-4 shadow-xl relative overflow-hidden group hover:border-emerald-500/40 transition-all duration-300">
           <div className="flex justify-between items-start">
@@ -451,11 +586,10 @@ export const OwnerDashboard: React.FC<{ onViewInvoice: (inv: Invoice) => void }>
         <div className="flex items-center space-x-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
           <button
             onClick={() => setActiveTab('analytics')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center space-x-1.5 ${
-              activeTab === 'analytics'
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center space-x-1.5 ${activeTab === 'analytics'
                 ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
                 : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-            }`}
+              }`}
           >
             <TrendingUp className="w-4 h-4" />
             <span>Sales Analytics</span>
@@ -463,11 +597,10 @@ export const OwnerDashboard: React.FC<{ onViewInvoice: (inv: Invoice) => void }>
 
           <button
             onClick={() => setActiveTab('sales')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center space-x-1.5 ${
-              activeTab === 'sales'
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center space-x-1.5 ${activeTab === 'sales'
                 ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
                 : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-            }`}
+              }`}
           >
             <Receipt className="w-4 h-4" />
             <span>Invoice History ({filteredInvoices.length})</span>
@@ -475,11 +608,10 @@ export const OwnerDashboard: React.FC<{ onViewInvoice: (inv: Invoice) => void }>
 
           <button
             onClick={() => setActiveTab('inventory')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center space-x-1.5 ${
-              activeTab === 'inventory'
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center space-x-1.5 ${activeTab === 'inventory'
                 ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
                 : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-            }`}
+              }`}
           >
             <Package className="w-4 h-4" />
             <span>Inventory ({products.length})</span>
@@ -487,11 +619,10 @@ export const OwnerDashboard: React.FC<{ onViewInvoice: (inv: Invoice) => void }>
 
           <button
             onClick={() => setActiveTab('customers')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center space-x-1.5 ${
-              activeTab === 'customers'
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center space-x-1.5 ${activeTab === 'customers'
                 ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
                 : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-            }`}
+              }`}
           >
             <Users className="w-4 h-4" />
             <span>Customers ({customers.length})</span>
@@ -499,11 +630,10 @@ export const OwnerDashboard: React.FC<{ onViewInvoice: (inv: Invoice) => void }>
 
           <button
             onClick={() => setActiveTab('gst_invoices')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center space-x-1.5 ${
-              activeTab === 'gst_invoices'
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center space-x-1.5 ${activeTab === 'gst_invoices'
                 ? 'bg-amber-500 text-slate-950 font-extrabold shadow-md shadow-amber-500/20'
                 : 'text-amber-400 hover:text-amber-300 hover:bg-amber-500/10'
-            }`}
+              }`}
           >
             <FileSpreadsheet className="w-4 h-4" />
             <span>GST Invoices ({filteredGstInvoices.length})</span>
@@ -511,14 +641,24 @@ export const OwnerDashboard: React.FC<{ onViewInvoice: (inv: Invoice) => void }>
 
           <button
             onClick={() => setActiveTab('quotations')}
-            className={`px-4 py-2 rounded-xl text-xs font-semibold transition flex items-center space-x-1.5 ${
-              activeTab === 'quotations'
+            className={`px-4 py-2 rounded-xl text-xs font-semibold transition flex items-center space-x-1.5 ${activeTab === 'quotations'
                 ? 'bg-amber-500 text-slate-950 font-bold shadow-md shadow-amber-500/20'
                 : 'text-amber-400 hover:text-amber-300 hover:bg-amber-500/10'
-            }`}
+              }`}
           >
             <Sparkles className="w-4 h-4" />
             <span>Quotation Leads & Calls ({quotations.length})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('shopkeepers')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center space-x-1.5 ${activeTab === 'shopkeepers'
+                ? 'bg-emerald-500 text-slate-950 font-black shadow-md shadow-emerald-500/20'
+                : 'text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10'
+              }`}
+          >
+            <Store className="w-4 h-4" />
+            <span>Shopkeeper Access</span>
           </button>
         </div>
 
@@ -552,7 +692,7 @@ export const OwnerDashboard: React.FC<{ onViewInvoice: (inv: Invoice) => void }>
       {/* TAB 2: FILTERABLE SALES HISTORY */}
       {activeTab === 'sales' && (
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
-          
+
           {/* Filters Bar */}
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-slate-800">
             <div className="relative flex-1">
@@ -631,16 +771,18 @@ export const OwnerDashboard: React.FC<{ onViewInvoice: (inv: Invoice) => void }>
                         </td>
                         <td className="py-3 px-3">
                           <div className="font-semibold text-white">{inv.customerName}</div>
-                          <div className="text-[10px] text-slate-400 font-mono">📱 {inv.customerPhone}</div>
+                          <div className="flex items-center space-x-1 text-[10px] text-slate-400 font-mono">
+                            <Phone className="w-2.5 h-2.5 shrink-0" />
+                            <span>{inv.customerPhone}</span>
+                          </div>
                         </td>
                         <td className="py-3 px-3">
                           <div className="flex items-center space-x-1">
-                            <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-800 border border-slate-700 text-slate-300 uppercase">
+                            <span className="payment-method-badge px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-800 border border-slate-700 text-slate-300 uppercase">
                               {inv.paymentMethod}
                             </span>
-                            <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
-                              dueVal > 0 ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                            }`}>
+                            <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${dueVal > 0 ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                              }`}>
                               {dueVal > 0 ? 'Partial' : 'Paid'}
                             </span>
                           </div>
@@ -662,7 +804,7 @@ export const OwnerDashboard: React.FC<{ onViewInvoice: (inv: Invoice) => void }>
                           <button
                             onClick={() => handleViewInvoiceWithDetails(inv)}
                             disabled={isOpening}
-                            className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-indigo-400 rounded-lg text-[11px] font-semibold border border-slate-700 transition flex items-center justify-center space-x-1 mx-auto disabled:opacity-50"
+                            className="view-bill-btn px-3 py-1 bg-slate-800 hover:bg-slate-700 text-indigo-400 rounded-lg text-[11px] font-semibold border border-slate-700 transition flex items-center justify-center space-x-1 mx-auto disabled:opacity-50"
                           >
                             {isOpening ? (
                               <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -755,7 +897,7 @@ export const OwnerDashboard: React.FC<{ onViewInvoice: (inv: Invoice) => void }>
       {/* TAB 3: INVENTORY MANAGEMENT */}
       {activeTab === 'inventory' && (
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
-          
+
           {/* Inventory Filters */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
             <div className="relative flex-1">
@@ -793,9 +935,9 @@ export const OwnerDashboard: React.FC<{ onViewInvoice: (inv: Invoice) => void }>
                   <th className="py-3 px-3">SKU</th>
                   <th className="py-3 px-3">Category</th>
                   <th className="py-3 px-3 text-right">Cost Price</th>
-                  <th className="py-3 px-3 text-right">Selling Price (Edit)</th>
-                  <th className="py-3 px-3 text-center">Stock Qty (Edit)</th>
-                  <th className="py-3 px-3 text-center">Action</th>
+                  <th className="py-3 px-3 text-right">Selling Price</th>
+                  <th className="py-3 px-3 text-center">Stock Qty</th>
+                  <th className="py-3 px-3 text-center">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
@@ -841,7 +983,7 @@ export const OwnerDashboard: React.FC<{ onViewInvoice: (inv: Invoice) => void }>
                         </td>
                         <td className="py-3 px-3 font-mono text-slate-400">{p.sku}</td>
                         <td className="py-3 px-3">
-                          <span className="px-2 py-0.5 rounded-md text-[10px] bg-slate-800 text-slate-300 block font-semibold w-fit">
+                          <span className="inventory-category-badge px-2 py-0.5 rounded-md text-[10px] bg-slate-800 text-slate-300 block font-semibold w-fit">
                             {p.category}
                           </span>
                           {p.subCategory && (
@@ -851,74 +993,51 @@ export const OwnerDashboard: React.FC<{ onViewInvoice: (inv: Invoice) => void }>
                           )}
                         </td>
                         <td className="py-3 px-3 text-right font-mono text-slate-400">₹{p.costPrice}</td>
-                        
-                        {/* Directly Editable Selling Price */}
+
+                        {/* Selling Price — read-only display */}
                         <td className="py-3 px-3 text-right">
-                          <div className="flex items-center justify-end space-x-1 font-mono">
-                            <span className="text-slate-400 font-bold">₹</span>
-                            <input
-                              type="number"
-                              min="0"
-                              step="any"
-                              value={p.price}
-                              onChange={e => {
-                                const val = parseFloat(e.target.value);
-                                updateProductPrice(p.id, isNaN(val) ? 0 : val);
-                              }}
-                              className="w-24 text-right bg-slate-950 font-extrabold text-emerald-400 text-xs py-1 px-2 border border-slate-700 rounded-lg focus:outline-none focus:border-emerald-500 shadow-inner"
-                            />
-                          </div>
-                          <div className="text-[10px] text-slate-400 text-right mt-0.5 font-mono">
-                            {margin}% margin
-                          </div>
+                          <div className="font-mono font-extrabold text-emerald-400 text-xs">₹{p.price.toLocaleString()}</div>
+                          <div className="text-[10px] text-slate-400 text-right mt-0.5 font-mono">{margin}% margin</div>
                         </td>
 
-                        {/* Directly Editable Stock Level */}
+                        {/* Stock Qty — read-only with status badge */}
                         <td className="py-3 px-3 text-center">
-                          <div className="flex items-center justify-center space-x-1.5">
-                            <input
-                              type="number"
-                              min="0"
-                              value={p.stock}
-                              onChange={e => {
-                                const val = parseInt(e.target.value, 10);
-                                updateProductStock(p.id, isNaN(val) ? 0 : val);
-                              }}
-                              className={`w-24 text-center font-mono font-black text-xs py-1 px-2 rounded-lg border focus:outline-none shadow-inner ${
-                                p.stock === 0
-                                  ? 'bg-red-950/40 border-red-500/50 text-red-400'
-                                  : p.stock <= 10
-                                  ? 'bg-amber-950/40 border-amber-500/50 text-amber-400'
-                                  : 'bg-slate-950 border-slate-700 text-white focus:border-indigo-500'
-                              }`}
-                            />
-                            <span className="text-[10px] text-slate-400 font-mono">{p.unit}s</span>
-                          </div>
+                          <div className="font-mono font-black text-xs text-white">{p.stock.toLocaleString()}</div>
+                          <div className="text-[10px] text-slate-400 font-mono">{p.unit}s</div>
                           <div className="mt-1">
                             <span
-                              className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${
-                                p.stock === 0
+                              className={`inventory-stock-badge px-2 py-0.5 rounded-full text-[9px] font-bold ${p.stock === 0
                                   ? 'bg-red-500/20 text-red-400'
                                   : p.stock <= 10
-                                  ? 'bg-amber-500/20 text-amber-400'
-                                  : 'bg-emerald-500/20 text-emerald-400'
-                              }`}
+                                    ? 'bg-amber-500/20 text-amber-400'
+                                    : 'bg-emerald-500/20 text-emerald-400'
+                                }`}
                             >
                               {p.stock === 0 ? 'Out of Stock' : p.stock <= 10 ? 'Low Stock' : 'In Stock'}
                             </span>
                           </div>
                         </td>
 
-                        {/* Action: Delete Item Button */}
+                        {/* Actions: Edit + Delete */}
                         <td className="py-3 px-3 text-center">
-                          <button
-                            type="button"
-                            onClick={() => setProductToDelete(p)}
-                            className="p-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 rounded-lg transition"
-                            title="Delete Product"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          <div className="flex items-center justify-center space-x-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setEditingProduct(p)}
+                              className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-[11px] font-bold border border-indigo-500 transition flex items-center space-x-1"
+                              title="Edit Product"
+                            >
+                              <span>Edit</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setProductToDelete(p)}
+                              className="inventory-delete-btn p-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 rounded-lg transition"
+                              title="Delete Product"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -976,76 +1095,309 @@ export const OwnerDashboard: React.FC<{ onViewInvoice: (inv: Invoice) => void }>
         </div>
       )}
 
-      {/* TAB 4: CUSTOMER DIRECTORY */}
+      {/* TAB 4: CUSTOMER DIRECTORY & CREDIT LEDGER */}
       {activeTab === 'customers' && (
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
-          <div className="relative">
-            <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
-            <input
-              type="text"
-              value={customerSearch}
-              onChange={e => setCustomerSearch(e.target.value)}
-              placeholder="Search customers by name, phone or address..."
-              className="w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500"
-            />
+          
+          {/* Header & KPI Summary */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+            <div>
+              <h2 className="text-base font-bold text-white uppercase tracking-tight flex items-center gap-2">
+                <Users className="w-5 h-5 text-indigo-400" />
+                <span>Customer Directory & Credit Ledger</span>
+              </h2>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Sort, filter, and track customer purchase histories, visit frequency, lifetime spend, and pending credit dues.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 font-mono text-xs">
+              <span className="px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-300 font-bold">
+                Total: <strong className="text-white">{customers.length}</strong>
+              </span>
+              <span className="px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 font-bold">
+                Dues: <strong className="text-amber-400">{customers.filter(c => (c.totalDue || 0) > 0).length}</strong>
+              </span>
+            </div>
           </div>
 
+
+
+
+          {/* Filters & Sorting Toolbar */}
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+            {/* Search Input */}
+            <div className="relative flex-1 min-w-[240px]">
+              <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+              <input
+                type="text"
+                value={customerSearch}
+                onChange={e => handleCustomerSearchChange(e.target.value)}
+                placeholder="Search by customer name, phone or address..."
+                className="w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500 placeholder-slate-600"
+              />
+            </div>
+
+            {/* Sort & Filter Dropdowns */}
+            <div className="flex items-center flex-wrap gap-2 text-xs">
+              
+
+
+              {/* Sort By Dropdown — one entry per field, direction toggled separately */}
+              <div className="flex items-center space-x-1.5 bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5">
+                <ArrowUpDown className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                <span className="text-[11px] text-slate-400 font-medium">Sort By:</span>
+                <select
+                  value={customerSortField}
+                  onChange={e => {
+                    setCustomerSortField(e.target.value as 'due' | 'last_visit' | 'visits' | 'spent' | 'name');
+                    setCustomerPage(1);
+                  }}
+                  className="bg-transparent text-white text-xs font-semibold focus:outline-none cursor-pointer"
+                >
+                  <option value="due" className="bg-slate-900 text-amber-400">Pending Due</option>
+                  <option value="last_visit" className="bg-slate-900 text-white">Last Visit Date</option>
+                  <option value="visits" className="bg-slate-900 text-white">Total Visits</option>
+                  <option value="spent" className="bg-slate-900 text-white">Total Billing Amount</option>
+                  <option value="name" className="bg-slate-900 text-white">Customer Name</option>
+                </select>
+              </div>
+
+              {/* Sort Order Direction Toggle Button */}
+              <button
+                type="button"
+                onClick={() => setCustomerSortOrder(prev => (prev === 'desc' ? 'asc' : 'desc'))}
+                title={`Switch to ${customerSortOrder === 'desc' ? 'Ascending' : 'Descending'} order`}
+                className="px-2.5 py-1.5 rounded-xl bg-slate-950 border border-slate-800 hover:border-indigo-500/50 text-indigo-300 hover:text-white transition flex items-center space-x-1 font-bold text-xs cursor-pointer"
+              >
+                {customerSortOrder === 'desc' ? (
+                  <>
+                    <ArrowDown className="w-3.5 h-3.5 text-indigo-400" />
+                    <span className="text-[11px]">Desc</span>
+                  </>
+                ) : (
+                  <>
+                    <ArrowUp className="w-3.5 h-3.5 text-indigo-400" />
+                    <span className="text-[11px]">Asc</span>
+                  </>
+                )}
+              </button>
+
+            </div>
+          </div>
+
+          {/* Customers Table */}
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs text-slate-300">
               <thead>
                 <tr className="border-b border-slate-800 text-slate-400 font-bold uppercase text-[10px]">
-                  <th className="py-3 px-3">Customer Name</th>
+                  
+                  {/* Customer Name Header */}
+                  <th className="py-3 px-3">
+                    <button
+                      type="button"
+                      onClick={() => handleColumnHeaderSort('name')}
+                      className="flex items-center space-x-1 text-slate-400 hover:text-white uppercase font-bold transition group cursor-pointer"
+                    >
+                      <span>Customer Name</span>
+                      {customerSortField === 'name' ? (
+                        customerSortOrder === 'asc' ? <ArrowUp className="w-3 h-3 text-indigo-400" /> : <ArrowDown className="w-3 h-3 text-indigo-400" />
+                      ) : (
+                        <ArrowUpDown className="w-3 h-3 opacity-0 group-hover:opacity-60 transition" />
+                      )}
+                    </button>
+                  </th>
+
                   <th className="py-3 px-3">Phone Number</th>
                   <th className="py-3 px-3">Address</th>
-                  <th className="py-3 px-3 text-center">Total Visits</th>
-                  <th className="py-3 px-3 text-right">Lifetime Spend</th>
-                  <th className="py-3 px-3 text-right">Pending Credit Due</th>
+
+                  {/* Last Visit Date Header */}
+                  <th className="py-3 px-3 text-center">
+                    <button
+                      type="button"
+                      onClick={() => handleColumnHeaderSort('last_visit')}
+                      className="flex items-center space-x-1 text-slate-400 hover:text-white uppercase font-bold transition group mx-auto cursor-pointer"
+                    >
+                      <span>Last Visit Date</span>
+                      {customerSortField === 'last_visit' ? (
+                        customerSortOrder === 'asc' ? <ArrowUp className="w-3 h-3 text-indigo-400" /> : <ArrowDown className="w-3 h-3 text-indigo-400" />
+                      ) : (
+                        <ArrowUpDown className="w-3 h-3 opacity-0 group-hover:opacity-60 transition" />
+                      )}
+                    </button>
+                  </th>
+
+                  {/* Total Visits Header */}
+                  <th className="py-3 px-3 text-center">
+                    <button
+                      type="button"
+                      onClick={() => handleColumnHeaderSort('visits')}
+                      className="flex items-center space-x-1 text-slate-400 hover:text-white uppercase font-bold transition group mx-auto cursor-pointer"
+                    >
+                      <span>Total Visits</span>
+                      {customerSortField === 'visits' ? (
+                        customerSortOrder === 'asc' ? <ArrowUp className="w-3 h-3 text-indigo-400" /> : <ArrowDown className="w-3 h-3 text-indigo-400" />
+                      ) : (
+                        <ArrowUpDown className="w-3 h-3 opacity-0 group-hover:opacity-60 transition" />
+                      )}
+                    </button>
+                  </th>
+
+                  {/* Lifetime Spend Header */}
+                  <th className="py-3 px-3 text-right">
+                    <button
+                      type="button"
+                      onClick={() => handleColumnHeaderSort('spent')}
+                      className="flex items-center space-x-1 text-slate-400 hover:text-white uppercase font-bold transition group ml-auto cursor-pointer"
+                    >
+                      <span>Total Billing Amount</span>
+                      {customerSortField === 'spent' ? (
+                        customerSortOrder === 'asc' ? <ArrowUp className="w-3 h-3 text-indigo-400" /> : <ArrowDown className="w-3 h-3 text-indigo-400" />
+                      ) : (
+                        <ArrowUpDown className="w-3 h-3 opacity-0 group-hover:opacity-60 transition" />
+                      )}
+                    </button>
+                  </th>
+
+                  {/* Pending Credit Due Header */}
+                  <th className="py-3 px-3 text-right">
+                    <button
+                      type="button"
+                      onClick={() => handleColumnHeaderSort('due')}
+                      className="flex items-center space-x-1 text-slate-400 hover:text-white uppercase font-bold transition group ml-auto cursor-pointer"
+                    >
+                      <span>Pending Credit Due</span>
+                      {customerSortField === 'due' ? (
+                        customerSortOrder === 'asc' ? <ArrowUp className="w-3 h-3 text-amber-400" /> : <ArrowDown className="w-3 h-3 text-amber-400" />
+                      ) : (
+                        <ArrowUpDown className="w-3 h-3 opacity-0 group-hover:opacity-60 transition" />
+                      )}
+                    </button>
+                  </th>
+
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
-                {filteredCustomers.map(c => {
-                  const actualVisits = invoices.filter(
-                    i => !i.isSettlementReceipt && i.customerPhone.replace(/\D/g, '') === c.phone.replace(/\D/g, '')
-                  ).length;
-                  const totalVisits = Math.max(c.totalPurchases || 0, actualVisits);
-                  const actualSpent = invoices
-                    .filter(i => !i.isSettlementReceipt && i.customerPhone.replace(/\D/g, '') === c.phone.replace(/\D/g, ''))
-                    .reduce((sum, i) => sum + i.totalAmount, 0);
-                  const lifetimeSpent = Math.max(c.totalSpent || 0, actualSpent);
-
-                  return (
+                {paginatedCustomers.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="py-8 text-center text-slate-500">
+                      No matching customer accounts found.
+                    </td>
+                  </tr>
+                ) : (
+                  paginatedCustomers.map(c => (
                     <tr key={c.id} className="hover:bg-slate-800/40 transition">
-                      <td className="py-3 px-3 font-semibold text-white">{c.name}</td>
-                      <td className="py-3 px-3 font-mono text-emerald-400">📱 {c.phone}</td>
-                      <td className="py-3 px-3 text-slate-400">{c.address}</td>
+                      <td className="py-3 px-3 font-semibold text-white">
+                        <div className="flex items-center space-x-2">
+                          <div className="w-7 h-7 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center font-bold text-xs shrink-0">
+                            {c.name.charAt(0).toUpperCase()}
+                          </div>
+                          <span>{c.name}</span>
+                        </div>
+                      </td>
+                      <td className="py-3 px-3 font-mono text-emerald-400">
+                        <div className="flex items-center space-x-1">
+                          <Phone className="w-3 h-3 shrink-0" />
+                          <span>{c.phone}</span>
+                        </div>
+                      </td>
+                      <td className="py-3 px-3 text-slate-400 max-w-[200px] truncate">{c.address || '—'}</td>
+                      
+                      {/* Last Visit Date */}
+                      <td className="py-3 px-3 text-center font-mono text-slate-300">
+                        {c.lastVisitDate ? (
+                          <span className="px-2 py-0.5 rounded-md bg-slate-950 border border-slate-800 text-[11px] text-slate-300">
+                            {c.lastVisitFormatted}
+                          </span>
+                        ) : (
+                          <span className="text-slate-600 text-[11px]">No visits</span>
+                        )}
+                      </td>
+
+                      {/* Total Visits */}
                       <td className="py-3 px-3 text-center font-mono font-bold text-indigo-400">
-                        {totalVisits}
+                        <span className="px-2 py-0.5 rounded-full bg-indigo-500/10 border border-indigo-500/20">
+                          {c.totalVisits} {c.totalVisits === 1 ? 'visit' : 'visits'}
+                        </span>
                       </td>
+
+                      {/* Lifetime Billing Amount */}
                       <td className="py-3 px-3 text-right font-mono font-bold text-white">
-                        ₹{lifetimeSpent.toLocaleString('en-IN')}
+                        ₹{c.lifetimeSpent.toLocaleString('en-IN')}
                       </td>
+
+                      {/* Pending Credit Due */}
                       <td className="py-3 px-3 text-right font-mono">
                         {c.totalDue && c.totalDue > 0 ? (
                           <span className="px-2.5 py-1 rounded-md text-xs font-extrabold bg-amber-500/20 text-amber-400 border border-amber-500/30">
                             ₹{c.totalDue.toLocaleString('en-IN')} Due
                           </span>
                         ) : (
-                          <span className="text-emerald-400 font-semibold">₹0 Clear</span>
+                          <span className="text-emerald-400 font-semibold text-xs">₹0 Clear</span>
                         )}
                       </td>
                     </tr>
-                  );
-                })}
+                  ))
+                )}
               </tbody>
             </table>
           </div>
+
+          {/* Customers Pagination Toolbar */}
+          {filteredCustomers.length > 0 && (
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-800 text-xs text-slate-400">
+              <div className="flex items-center">
+                <span>
+                  Showing <strong className="text-white">{(customerPage - 1) * customerPerPage + 1}</strong> – <strong className="text-white">{Math.min(customerPage * customerPerPage, filteredCustomers.length)}</strong> of <strong className="text-white">{filteredCustomers.length}</strong> customers
+                </span>
+                <select
+                  value={customerPerPage}
+                  onChange={e => {
+                    setCustomerPerPage(Number(e.target.value));
+                    setCustomerPage(1);
+                  }}
+                  className="bg-slate-950 border border-slate-800 text-slate-300 text-xs rounded-lg px-2 py-1 focus:outline-none ml-2 font-medium"
+                >
+                  <option value={10}>10 / page</option>
+                  <option value={25}>25 / page</option>
+                  <option value={50}>50 / page</option>
+                  <option value={100}>100 / page</option>
+                </select>
+              </div>
+
+              <div className="flex items-center space-x-1.5">
+                <button
+                  type="button"
+                  onClick={() => setCustomerPage(p => Math.max(1, p - 1))}
+                  disabled={customerPage <= 1}
+                  className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-slate-300 hover:bg-slate-800 disabled:opacity-30 disabled:cursor-not-allowed transition flex items-center space-x-1 cursor-pointer"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                  <span>Prev</span>
+                </button>
+                <span className="px-2.5 py-1 text-slate-400 font-mono text-xs">
+                  Page <strong className="text-white">{customerPage}</strong> of <strong className="text-white">{totalCustomerPages}</strong>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setCustomerPage(p => Math.min(totalCustomerPages, p + 1))}
+                  disabled={customerPage >= totalCustomerPages}
+                  className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-slate-300 hover:bg-slate-800 disabled:opacity-30 disabled:cursor-not-allowed transition flex items-center space-x-1 cursor-pointer"
+                >
+                  <span>Next</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          )}
+
         </div>
       )}
 
       {/* TAB 5: GST INVOICES COMPLIANCE & HISTORY */}
       {activeTab === 'gst_invoices' && (
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
-          
+
           {/* Header & KPI Summary for GST */}
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-800">
             <div>
@@ -1166,7 +1518,10 @@ export const OwnerDashboard: React.FC<{ onViewInvoice: (inv: Invoice) => void }>
                         </td>
                         <td className="py-3 px-3">
                           <div className="font-semibold text-white">{inv.customerName}</div>
-                          <div className="text-[10px] text-slate-400 font-mono">📱 {inv.customerPhone}</div>
+                          <div className="flex items-center space-x-1 text-[10px] text-slate-400 font-mono">
+                            <Phone className="w-2.5 h-2.5 shrink-0" />
+                            <span>{inv.customerPhone}</span>
+                          </div>
                           {inv.customerGstin && (
                             <div className="text-[10px] text-indigo-400 font-mono font-bold">
                               GSTIN: {inv.customerGstin}
@@ -1186,11 +1541,10 @@ export const OwnerDashboard: React.FC<{ onViewInvoice: (inv: Invoice) => void }>
                           ₹{inv.totalAmount.toLocaleString()}
                         </td>
                         <td className="py-3 px-3 text-center">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                            inv.dueAmount && inv.dueAmount > 0
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${inv.dueAmount && inv.dueAmount > 0
                               ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
                               : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                          }`}>
+                            }`}>
                             {inv.dueAmount && inv.dueAmount > 0 ? `Partial (Due ₹${inv.dueAmount})` : 'Paid'}
                           </span>
                         </td>
@@ -1325,11 +1679,10 @@ export const OwnerDashboard: React.FC<{ onViewInvoice: (inv: Invoice) => void }>
                 <button
                   type="button"
                   onClick={() => setQuoteFilter('all')}
-                  className={`px-3 py-1.5 rounded-xl font-bold transition ${
-                    quoteFilter === 'all'
+                  className={`px-3 py-1.5 rounded-xl font-bold transition ${quoteFilter === 'all'
                       ? 'bg-amber-500 text-slate-950 shadow-md'
                       : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-white'
-                  }`}
+                    }`}
                 >
                   All ({quotations.length})
                 </button>
@@ -1337,11 +1690,10 @@ export const OwnerDashboard: React.FC<{ onViewInvoice: (inv: Invoice) => void }>
                 <button
                   type="button"
                   onClick={() => setQuoteFilter('targeted')}
-                  className={`px-3 py-1.5 rounded-xl font-bold transition flex items-center gap-1 ${
-                    quoteFilter === 'targeted'
+                  className={`px-3 py-1.5 rounded-xl font-bold transition flex items-center gap-1 ${quoteFilter === 'targeted'
                       ? 'bg-amber-500 text-slate-950 shadow-md'
                       : 'bg-slate-900 border border-amber-500/30 text-amber-400 hover:bg-amber-500/10'
-                  }`}
+                    }`}
                 >
                   <Star className="w-3.5 h-3.5 fill-current" />
                   <span>Targeted Leads ({quotations.filter(q => q.isTargeted).length})</span>
@@ -1350,11 +1702,10 @@ export const OwnerDashboard: React.FC<{ onViewInvoice: (inv: Invoice) => void }>
                 <button
                   type="button"
                   onClick={() => setQuoteFilter('pending')}
-                  className={`px-3 py-1.5 rounded-xl font-bold transition ${
-                    quoteFilter === 'pending'
+                  className={`px-3 py-1.5 rounded-xl font-bold transition ${quoteFilter === 'pending'
                       ? 'bg-indigo-600 text-white shadow-md'
                       : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-white'
-                  }`}
+                    }`}
                 >
                   Pending ({quotations.filter(q => q.status === 'Pending Follow-up').length})
                 </button>
@@ -1362,11 +1713,10 @@ export const OwnerDashboard: React.FC<{ onViewInvoice: (inv: Invoice) => void }>
                 <button
                   type="button"
                   onClick={() => setQuoteFilter('converted')}
-                  className={`px-3 py-1.5 rounded-xl font-bold transition ${
-                    quoteFilter === 'converted'
+                  className={`px-3 py-1.5 rounded-xl font-bold transition ${quoteFilter === 'converted'
                       ? 'bg-emerald-600 text-white shadow-md'
                       : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-white'
-                  }`}
+                    }`}
                 >
                   Converted ({quotations.filter(q => q.status === 'Converted to Sale').length})
                 </button>
@@ -1480,11 +1830,10 @@ export const OwnerDashboard: React.FC<{ onViewInvoice: (inv: Invoice) => void }>
                             <button
                               type="button"
                               onClick={() => toggleQuotationTargeted(quote.id, !quote.isTargeted)}
-                              className={`px-2.5 py-1 rounded-xl text-xs font-bold transition flex items-center space-x-1 border ${
-                                quote.isTargeted
+                              className={`px-2.5 py-1 rounded-xl text-xs font-bold transition flex items-center space-x-1 border ${quote.isTargeted
                                   ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-sm'
                                   : 'bg-slate-900 text-slate-400 hover:text-white border-slate-800'
-                              }`}
+                                }`}
                             >
                               <Star className={`w-3.5 h-3.5 ${quote.isTargeted ? 'fill-current' : ''}`} />
                               <span>{quote.isTargeted ? 'Targeted Lead' : 'Mark Targeted'}</span>
@@ -1508,15 +1857,14 @@ export const OwnerDashboard: React.FC<{ onViewInvoice: (inv: Invoice) => void }>
                                   prompt('Enter call follow-up notes (optional):') || undefined
                                 )
                               }
-                              className={`px-2 py-1 rounded-lg text-xs font-bold font-sans border focus:outline-none ${
-                                quote.status === 'Converted to Sale'
+                              className={`px-2 py-1 rounded-lg text-xs font-bold font-sans border focus:outline-none ${quote.status === 'Converted to Sale'
                                   ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
                                   : quote.status === 'Followed Up'
-                                  ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40'
-                                  : quote.status === 'Cancelled'
-                                  ? 'bg-red-500/20 text-red-300 border-red-500/40'
-                                  : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-                              }`}
+                                    ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40'
+                                    : quote.status === 'Cancelled'
+                                      ? 'bg-red-500/20 text-red-300 border-red-500/40'
+                                      : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                                }`}
                             >
                               <option value="Pending Follow-up" className="bg-slate-900 text-white">Pending Follow-up</option>
                               <option value="Followed Up" className="bg-slate-900 text-white">Followed Up</option>
@@ -1545,8 +1893,16 @@ export const OwnerDashboard: React.FC<{ onViewInvoice: (inv: Invoice) => void }>
         </div>
       )}
 
+      {/* 7. Shopkeeper Access Management Workspace */}
+      {activeTab === 'shopkeepers' && (
+        <ShopkeeperManagement />
+      )}
+
       {/* Modal for adding product */}
       <AddProductModal isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)} />
+
+      {/* Edit Product Modal */}
+      <EditProductModal product={editingProduct} onClose={() => setEditingProduct(null)} />
 
       {/* Manual GST Invoice Generator Modal */}
       <ManualGstModal isOpen={isManualGstModalOpen} onClose={() => setIsManualGstModalOpen(false)} />

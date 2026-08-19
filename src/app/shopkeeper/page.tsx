@@ -7,6 +7,9 @@ import { Header } from '@/components/Header';
 import { ItemBillingSection } from '@/components/shopkeeper/ItemBillingSection';
 import { Invoice } from '@/types';
 
+import { ShopkeeperLogin } from '@/components/shopkeeper/ShopkeeperLogin';
+import { Loader2 } from 'lucide-react';
+
 const CustomerHistorySection = dynamic(
   () => import('@/components/shopkeeper/CustomerHistorySection').then(m => m.CustomerHistorySection)
 );
@@ -20,7 +23,7 @@ const InvoiceModal = dynamic(
 );
 
 export default function ShopkeeperPage() {
-  const { lastGeneratedInvoice, setLastGeneratedInvoice } = useApp();
+  const { isShopkeeperAuthenticated, isShopkeeperAuthLoading, lastGeneratedInvoice, setLastGeneratedInvoice } = useApp();
   const [viewingInvoice, setViewingInvoice] = useState<Invoice | null>(null);
   const [activeTab, setActiveTab] = useState<'billing' | 'history' | 'quotation'>('billing');
 
@@ -34,6 +37,23 @@ export default function ShopkeeperPage() {
     setViewingInvoice(null);
     setLastGeneratedInvoice(null);
   };
+
+  if (isShopkeeperAuthLoading) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-center p-4 font-sans">
+        <Loader2 className="w-8 h-8 animate-spin text-emerald-500 mb-3" />
+        <p className="text-sm font-medium text-slate-400">Validating Shopkeeper Session...</p>
+      </div>
+    );
+  }
+
+  if (!isShopkeeperAuthenticated) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-center p-4 font-sans selection:bg-emerald-500 selection:text-slate-950">
+        <ShopkeeperLogin />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-emerald-500 selection:text-slate-950">

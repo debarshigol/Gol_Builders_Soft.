@@ -115,6 +115,50 @@ CREATE POLICY "Public Read Quotations" ON public.quotations FOR SELECT USING (tr
 CREATE POLICY "Public Insert Quotations" ON public.quotations FOR INSERT WITH CHECK (true);
 CREATE POLICY "Public Update Quotations" ON public.quotations FOR UPDATE USING (true);
 
--- 5. STORAGE BUCKET FOR PRODUCT IMAGES
+-- 5. OWNER USERS TABLE (OWNER DASHBOARD AUTHENTICATION)
+CREATE TABLE IF NOT EXISTS public.owner_users (
+    id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    username TEXT NOT NULL UNIQUE,
+    password TEXT NOT NULL,
+    name TEXT NOT NULL,
+    role TEXT DEFAULT 'owner',
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    last_login TIMESTAMPTZ
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_owner_users_username ON public.owner_users(username);
+CREATE INDEX IF NOT EXISTS idx_owner_users_active ON public.owner_users(is_active);
+
+-- Enable Row Level Security (RLS)
+ALTER TABLE public.owner_users ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Public Read Owner Users" ON public.owner_users FOR SELECT USING (true);
+CREATE POLICY "Public Insert Owner Users" ON public.owner_users FOR INSERT WITH CHECK (true);
+CREATE POLICY "Public Update Owner Users" ON public.owner_users FOR UPDATE USING (true);
+
+-- 6. SHOPKEEPER USERS TABLE (SHOPKEEPER POS DASHBOARD AUTHENTICATION)
+CREATE TABLE IF NOT EXISTS public.shopkeeper_users (
+    id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    name TEXT NOT NULL,
+    username TEXT NOT NULL UNIQUE,
+    password TEXT NOT NULL,
+    role TEXT DEFAULT 'shopkeeper',
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    last_login TIMESTAMPTZ,
+    created_by TEXT
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_shopkeeper_users_username ON public.shopkeeper_users(username);
+CREATE INDEX IF NOT EXISTS idx_shopkeeper_users_active ON public.shopkeeper_users(is_active);
+
+-- Enable Row Level Security (RLS)
+ALTER TABLE public.shopkeeper_users ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Public Read Shopkeeper Users" ON public.shopkeeper_users FOR SELECT USING (true);
+CREATE POLICY "Public Insert Shopkeeper Users" ON public.shopkeeper_users FOR INSERT WITH CHECK (true);
+CREATE POLICY "Public Update Shopkeeper Users" ON public.shopkeeper_users FOR UPDATE USING (true);
+CREATE POLICY "Public Delete Shopkeeper Users" ON public.shopkeeper_users FOR DELETE USING (true);
+
+-- 7. STORAGE BUCKET FOR PRODUCT IMAGES
 -- Create a public storage bucket named 'product-images' in Supabase Dashboard -> Storage
 -- Set bucket permissions to 'Public' so uploaded images render automatically on all screens.

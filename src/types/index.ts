@@ -89,3 +89,26 @@ export interface Quotation {
 }
 
 export type UserRole = 'shopkeeper' | 'owner';
+
+export interface OwnerUser {
+  id: string;
+  username: string;
+  name: string;
+  role?: string;
+  isActive?: boolean;
+  createdAt?: string;
+  lastLogin?: string;
+}
+
+export interface ShopkeeperUser {
+  id: string;
+  name: string;
+  username: string;
+  password?: string;
+  role: 'shopkeeper';
+  isActive: boolean;
+  createdAt?: string;
+  lastLogin?: string;
+  createdBy?: string;
+  expiresAt?: number; // 8-hour session expiration timestamp (epoch ms)
+}
