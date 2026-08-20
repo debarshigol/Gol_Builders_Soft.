@@ -297,10 +297,9 @@ export const Header: React.FC<HeaderProps> = ({
             <div className="flex items-center space-x-1.5 sm:space-x-2 shrink-0">
               <div className="shopkeeper-status-pill hidden lg:flex items-center space-x-1.5 px-2.5 sm:px-3 py-1.5 rounded-2xl border font-bold text-xs shadow-sm bg-emerald-950/80 text-emerald-300 border-emerald-500/40">
                 <span className="w-2 h-2 rounded-full animate-pulse bg-emerald-400"></span>
-                <span className="font-extrabold text-white truncate max-w-[120px]">
+                <span className="font-extrabold text-white">
                   {currentShopkeeper.name}
                 </span>
-                <span className="text-[10px] text-emerald-400 font-mono">@{currentShopkeeper.username}</span>
               </div>
               <button
                 type="button"
@@ -319,10 +318,9 @@ export const Header: React.FC<HeaderProps> = ({
             <div className="flex items-center space-x-2">
               <div className="owner-status-pill flex items-center space-x-1.5 sm:space-x-2 px-2.5 sm:px-3 py-1.5 rounded-2xl border font-bold text-xs shadow-sm transition-all bg-indigo-950/80 text-indigo-300 border-indigo-500/40">
                 <span className="w-2 h-2 rounded-full animate-pulse bg-emerald-400"></span>
-                <span className="hidden md:inline font-extrabold text-white truncate max-w-[120px]">
+                <span className="font-extrabold text-white">
                   {currentOwner.name}
                 </span>
-                <span className="text-[10px] text-indigo-300 font-mono">@{currentOwner.username}</span>
               </div>
               <button
                 type="button"

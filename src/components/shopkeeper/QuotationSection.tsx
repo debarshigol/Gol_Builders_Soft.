@@ -208,31 +208,26 @@ export const QuotationSection: React.FC<QuotationSectionProps> = ({
               No products matching "{searchTerm}"
             </div>
           ) : (
-            filteredProducts.map(product => {
+            filteredProducts.map((product, idx) => {
               const quoteItem = quoteCart.find(i => i.product.id === product.id);
-              const isOutOfStock = product.stock <= 0;
 
               return (
                 <div
                   key={product.id}
-                  className={`p-3 rounded-2xl border transition-all duration-300 flex flex-col justify-between group ${isOutOfStock
-                      ? 'bg-slate-950/40 border-slate-850 opacity-60'
-                      : quoteItem && quoteItem.quantity > 0
-                        ? 'bg-slate-950 border-amber-500/60 shadow-lg shadow-amber-500/10'
-                        : 'bg-slate-950 border-slate-800/90 hover:border-amber-500/40 hover:shadow-xl'
-                    }`}
+                  className={`shop-product-card relative p-3 rounded-2xl border transition-all duration-300 flex flex-col justify-between group ${
+                    quoteItem
+                      ? 'border-slate-800 shadow-lg'
+                      : 'border-slate-800/90 hover:shadow-xl'
+                  }`}
                 >
-                  {/* Image Emoji Container */}
-                  <div className="relative w-full h-28 sm:h-32 rounded-xl bg-slate-900/90 border border-slate-800/80 flex items-center justify-center overflow-hidden p-2.5 group-hover:border-slate-700 transition">
-                    <span className="absolute top-2 right-2 text-[10px] font-mono px-2 py-0.5 rounded-md font-bold z-10 bg-slate-950/90 text-amber-400 border border-amber-500/30">
-                      {product.unit}
-                    </span>
-
+                  {/* Top 50-60%: Product Image / Emoji Container */}
+                  <div className="shop-product-image relative w-full h-28 sm:h-32 rounded-xl border border-slate-800/80 flex items-center justify-center overflow-hidden p-2.5 group-hover:border-slate-700 transition">
+                    {/* Centered Product Image / Emoji Display */}
                     {product.imageUrl ? (
                       <img
                         src={product.imageUrl}
                         alt={product.name}
-                        loading="lazy"
+                        loading={idx < 10 ? 'eager' : 'lazy'}
                         decoding="async"
                         className="w-full h-full object-contain p-1 rounded-xl"
                       />
@@ -243,71 +238,73 @@ export const QuotationSection: React.FC<QuotationSectionProps> = ({
                     )}
                   </div>
 
-                  {/* Info Details */}
+                  {/* Middle 30%: Product Info Details */}
                   <div className="mt-3 flex-1 flex flex-col justify-between">
                     <div>
-                      <h4 className="font-bold text-xs sm:text-sm text-white group-hover:text-amber-300 transition line-clamp-2 leading-snug">
+                      <h4 className="font-bold text-xs sm:text-sm text-white group-hover:text-emerald-300 transition line-clamp-2 leading-snug">
                         {product.name}
                       </h4>
-                      <div className="flex items-center space-x-1.5 mt-1">
-                        <span className="text-[10px] text-slate-500 truncate">
-                          {product.category}
-                        </span>
+                      <p className="text-[11px] text-slate-400 font-medium mt-1">
+                        Unit: <span className="text-slate-300 font-semibold">{product.unit}</span>
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Bottom 10-15%: Pricing & ADD Button / Stepper */}
+                  <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-slate-800/80">
+                    <div>
+                      <div className="text-base font-black text-white font-mono tabular-nums leading-none">
+                        ₹{product.price.toLocaleString()}
                       </div>
                     </div>
 
-                    {/* Pricing & Add / Stepper */}
-                    <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-slate-800/80">
-                      <div>
-                        <div className="text-base font-black text-white font-mono tabular-nums leading-none">
-                          ₹{product.price.toLocaleString()}
-                        </div>
-                      </div>
-
-                      {quoteItem && quoteItem.quantity > 0 ? (
-                        <div className="flex items-center space-x-1 bg-amber-950/80 border border-amber-500/60 rounded-xl p-1 shadow-sm">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (quoteItem.quantity <= 1) {
-                                removeFromQuoteCart(product.id);
-                              } else {
-                                updateQuoteQuantity(product.id, quoteItem.quantity - 1);
-                              }
-                            }}
-                            className="w-6 h-6 rounded-lg bg-amber-800 hover:bg-amber-700 text-white flex items-center justify-center text-xs font-bold transition"
-                          >
-                            -
-                          </button>
-                          <input
-                            type="number"
-                            min="1"
-                            max={product.stock}
-                            value={quoteItem.quantity === 0 ? '' : quoteItem.quantity}
-                            onChange={e => {
-                              const val = e.target.value === '' ? 0 : parseInt(e.target.value, 10);
-                              updateQuoteQuantity(product.id, isNaN(val) ? 0 : val);
-                            }}
-                            className="w-10 text-center bg-slate-950 text-white font-mono font-black text-xs py-0.5 border border-amber-500/40 rounded focus:outline-none focus:border-amber-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => updateQuoteQuantity(product.id, quoteItem.quantity + 1)}
-                            className="w-6 h-6 rounded-lg bg-amber-800 hover:bg-amber-700 text-white flex items-center justify-center text-xs font-bold transition"
-                          >
-                            +
-                          </button>
-                        </div>
-                      ) : (
+                    {quoteItem ? (
+                      <div className="flex items-center space-x-1 bg-amber-950/80 border border-amber-500/60 rounded-xl p-1 shadow-sm">
                         <button
-                          onClick={() => addToQuoteCart(product)}
-                          className="px-3.5 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border-2 border-amber-500 font-extrabold rounded-xl text-xs uppercase tracking-wider transition hover:scale-105 shadow-sm flex items-center space-x-1"
+                          type="button"
+                          onClick={() => {
+                            if (quoteItem.quantity <= 1) {
+                              removeFromQuoteCart(product.id);
+                            } else {
+                              updateQuoteQuantity(product.id, quoteItem.quantity - 1);
+                            }
+                          }}
+                          className="w-6 h-6 rounded-lg bg-amber-800 hover:bg-amber-700 text-white flex items-center justify-center text-xs font-bold transition"
                         >
-                          <Plus className="w-3.5 h-3.5" />
-                          <span>ADD</span>
+                          -
                         </button>
-                      )}
-                    </div>
+                        <input
+                          type="number"
+                          min="1"
+                          value={quoteItem.quantity === 0 ? '' : quoteItem.quantity}
+                          onChange={e => {
+                            const val = e.target.value === '' ? 0 : parseInt(e.target.value, 10);
+                            updateQuoteQuantity(product.id, isNaN(val) ? 0 : val);
+                          }}
+                          onBlur={() => {
+                            if (!quoteItem.quantity || quoteItem.quantity < 1) {
+                              updateQuoteQuantity(product.id, 1);
+                            }
+                          }}
+                          className="w-12 text-center bg-slate-950 text-white font-mono font-black text-xs py-0.5 border border-amber-500/40 rounded focus:outline-none focus:border-amber-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => updateQuoteQuantity(product.id, (quoteItem.quantity || 0) + 1)}
+                          className="w-6 h-6 rounded-lg bg-amber-800 hover:bg-amber-700 text-white flex items-center justify-center text-xs font-bold transition"
+                        >
+                          +
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => addToQuoteCart(product)}
+                        className="px-3.5 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border-2 border-amber-500 font-extrabold rounded-xl text-xs uppercase tracking-wider transition hover:scale-105 shadow-sm flex items-center space-x-1"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>ADD</span>
+                      </button>
+                    )}
                   </div>
                 </div>
               );
@@ -436,11 +433,16 @@ export const QuotationSection: React.FC<QuotationSectionProps> = ({
                                 const val = e.target.value === '' ? 0 : parseInt(e.target.value, 10);
                                 updateQuoteQuantity(item.product.id, isNaN(val) ? 0 : val);
                               }}
+                              onBlur={() => {
+                                if (!item.quantity || item.quantity < 1) {
+                                  updateQuoteQuantity(item.product.id, 1);
+                                }
+                              }}
                               className="w-12 sm:w-16 text-center bg-slate-950 text-white font-mono font-black text-xs sm:text-sm py-1 border border-amber-500/50 rounded-xl focus:outline-none focus:border-amber-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                             />
                             <button
                               type="button"
-                              onClick={() => updateQuoteQuantity(item.product.id, item.quantity + 1)}
+                              onClick={() => updateQuoteQuantity(item.product.id, (item.quantity || 0) + 1)}
                               className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-amber-600 hover:bg-amber-500 active:scale-95 text-white font-black text-sm flex items-center justify-center transition shrink-0 shadow-sm"
                             >
                               +

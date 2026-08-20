@@ -244,28 +244,27 @@ export const ItemBillingSection: React.FC<ItemBillingSectionProps> = ({
               return (
                 <div
                   key={product.id}
-                  className={`p-3 rounded-2xl border transition-all duration-300 flex flex-col justify-between group ${isOutOfStock
-                    ? 'bg-slate-950/40 border-slate-850 opacity-60'
+                  className={`shop-product-card relative p-3 rounded-2xl border transition-all duration-300 flex flex-col justify-between group ${isOutOfStock
+                    ? 'opacity-60 border-slate-850'
                     : cartItem
-                      ? 'bg-slate-950 border-emerald-500/60 shadow-lg shadow-emerald-500/10'
-                      : 'bg-slate-950 border-slate-800/90 hover:border-emerald-500/40 hover:shadow-xl'
+                      ? 'border-slate-800 shadow-lg'
+                      : 'border-slate-800/90 hover:shadow-xl'
                     }`}
                 >
+                  {/* Stock Count Badge on Top-Right Corner of Product Card */}
+                  <span
+                    className={`shop-stock-badge absolute top-2.5 right-2.5 text-[10px] font-mono px-2 py-0.5 rounded-lg font-bold z-10 ${isOutOfStock
+                      ? 'bg-red-500/20 text-red-400 border border-red-500/30'
+                      : isLowStock
+                        ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold'
+                        : 'text-emerald-400 bg-transparent border-0'
+                      }`}
+                  >
+                    {isOutOfStock ? 'Out of Stock' : product.stock > 1000 ? '1000+ left' : `${product.stock} left`}
+                  </span>
+
                   {/* Top 50-60%: Product Image / Emoji Container */}
-                  <div className="relative w-full h-28 sm:h-32 rounded-xl bg-slate-900/90 border border-slate-800/80 flex items-center justify-center overflow-hidden p-2.5 group-hover:border-slate-700 transition">
-
-                    {/* Stock Badge Overlay Top Right */}
-                    <span
-                      className={`absolute top-2 right-2 text-[10px] font-mono px-2 py-0.5 rounded-md font-bold z-10 ${isOutOfStock
-                        ? 'bg-red-500/20 text-red-400 border border-red-500/30'
-                        : isLowStock
-                          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold'
-                          : 'bg-slate-950/90 text-emerald-400 border border-emerald-500/30'
-                        }`}
-                    >
-                      {isOutOfStock ? 'Out of Stock' : product.stock > 1000 ? '1000+ left' : `${product.stock} left`}
-                    </span>
-
+                  <div className="shop-product-image relative w-full h-28 sm:h-32 rounded-xl border border-slate-800/80 flex items-center justify-center overflow-hidden p-2.5 group-hover:border-slate-700 transition">
                     {/* Centered Product Image / Emoji Display */}
                     {product.imageUrl ? (
                       <img
@@ -326,6 +325,11 @@ export const ItemBillingSection: React.FC<ItemBillingSectionProps> = ({
                           onChange={e => {
                             const val = e.target.value === '' ? 0 : parseInt(e.target.value, 10);
                             updateCartQuantity(product.id, isNaN(val) ? 0 : val);
+                          }}
+                          onBlur={() => {
+                            if (!cartItem.quantity || cartItem.quantity < 1) {
+                              updateCartQuantity(product.id, 1);
+                            }
                           }}
                           className="w-10 text-center bg-slate-950 text-white font-mono font-black text-xs py-0.5 border border-emerald-500/40 rounded focus:outline-none focus:border-emerald-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                         />

@@ -283,19 +283,33 @@ html.light-mode button.bg-amber-500 {
   font-weight: 800 !important;
 }
 
-/* Blinkit Style Product Cards -> Pure White #ffffff with Off-White Container Background */
-html.light-mode .group,
-html.light-mode div.group {
+/* ==========================================================================
+   SHOPKEEPER POS: PRODUCT CARD STYLING (Dark Mode default & Light Mode pure white)
+   ========================================================================== */
+.shop-product-card {
+  background-color: #020617;
+}
+.shop-product-image {
+  background-color: rgba(15, 23, 42, 0.9);
+}
+
+/* Light Mode: Uniform Pure White #ffffff for entire Card Body & Image Container */
+html.light-mode .shop-product-card {
   background-color: #ffffff !important;
+  background: #ffffff !important;
   border: 1px solid #eeeeee !important;
   border-radius: 16px !important;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04) !important;
 }
 
-/* Product Image Container Light Mode */
-html.light-mode .relative.w-full.h-28,
-html.light-mode .relative.w-full.h-32 {
+html.light-mode .shop-product-card:hover {
+  border-color: #e5e7eb !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08) !important;
+}
+
+html.light-mode .shop-product-image {
   background-color: #ffffff !important;
+  background: #ffffff !important;
   border: none !important;
 }
 
@@ -314,11 +328,25 @@ html.light-mode .font-mono.tabular-nums {
 }
 
 /* Blinkit Stock Badges Light Mode */
+html.light-mode .shop-stock-badge,
 html.light-mode .bg-slate-950\/90 {
-  background-color: #ecfdf5 !important;
-  color: #047857 !important;
-  border: 1px solid #d1fae5 !important;
+  background-color: transparent !important;
+  background: transparent !important;
+  color: #059669 !important;
+  border: none !important;
   font-weight: 700 !important;
+}
+
+html.light-mode .shop-stock-badge.bg-amber-500\/20 {
+  background-color: #fffbeb !important;
+  color: #b45309 !important;
+  border: 1px solid #fde68a !important;
+}
+
+html.light-mode .shop-stock-badge.bg-red-500\/20 {
+  background-color: #fef2f2 !important;
+  color: #b91c1c !important;
+  border: 1px solid #fecaca !important;
 }
 
 /* Blinkit Style ADD Button */
